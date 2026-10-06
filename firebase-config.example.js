@@ -1,11 +1,13 @@
 // Копирай този файл като firebase-config.js и попълни стойностите от Firebase Console
 // (Project settings → Your apps → Firebase SDK snippet → Config)
 
-export const firebaseConfig = {
-  apiKey: "AIza...",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+const firebaseConfig = {
+  apiKey: "AIzaSyAdh15OILXjv7bP8G71YxNZFcOdL6G-pkA",
+  authDomain: "pillflow-bd2a1.firebaseapp.com",
+  projectId: "pillflow-bd2a1",
+  storageBucket: "pillflow-bd2a1.firebasestorage.app",
+  messagingSenderId: "339505692979",
+  appId: "1:339505692979:web:4ade0187a952e4d822fe46",
+  measurementId: "G-FWEFKXBXVF"
 };
+
