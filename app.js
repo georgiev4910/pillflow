@@ -471,6 +471,7 @@ function enterApp() {
   currentDate.setHours(0, 0, 0, 0);
   loadProfile();
   startListeners();
+  scheduleNotifications();
 }
 
 // ==================== TABS ====================
@@ -495,6 +496,11 @@ function switchTab(tab) {
   if (tab === 'today') renderToday();
   if (tab === 'calendar') renderCalendar();
   if (tab === 'meds') renderMeds();
+  if (tab === 'settings') {
+    renderWeekReview();
+    applyNotifToggle();
+    loadNotifTimes();
+  }
 }
 
 // ==================== SCHEDULE LOGIC ====================
@@ -708,7 +714,21 @@ function renderToday() {
 
   const sectionIcons = { morning: '🌅', noon: '☀️', evening: '🌆', night: '🌙' };
 
+  // Course ending soon banner
   let html = '';
+  const endingSoon = dayMeds.filter(m => {
+    const r = daysRemaining(m);
+    return r !== null && r >= 0 && r <= 3;
+  });
+  if (endingSoon.length > 0) {
+    html += `<div class="mb-3 p-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200">
+      ${endingSoon.map(m => {
+        const r = daysRemaining(m);
+        return r === 0 ? `<div>⚠️ <b>${m.name}</b> — последен ден</div>` : `<div>⏳ <b>${m.name}</b> — остават ${r} дни</div>`;
+      }).join('')}
+    </div>`;
+  }
+
   ['morning', 'noon', 'evening', 'night'].forEach(timeKey => {
     const items = sections[timeKey];
     if (items.length === 0) return;
@@ -730,8 +750,31 @@ function renderToday() {
       const condition = CONDITION_LABELS[med.condition] || '';
       const note = med.note ? med.note : '';
 
+      // Dependency check
+      let locked = false;
+      let lockMsg = '';
+      if (med.dependsOn && !isTaken) {
+        const depTaken = (med.times || []).some(t => dayLog[`${med.dependsOn}_${t}`]) ||
+          Object.keys(dayLog).some(k => k.startsWith(med.dependsOn + '_') && dayLog[k]);
+        // Check if any dose of dependency med was taken today
+        const depMed = meds.find(m => m.id === med.dependsOn);
+        let anyDepTaken = false;
+        if (depMed) {
+          (depMed.times || []).forEach(t => {
+            if (dayLog[`${depMed.id}_${t}`]) anyDepTaken = true;
+          });
+        }
+        if (!anyDepTaken) {
+          locked = true;
+          lockMsg = `Първо вземи ${depMed ? depMed.name : 'другото хапче'}`;
+        } else {
+          // Could show "wait X min" - simplified: unlock once dependency is taken
+          lockMsg = `${med.dependsMin || 30} мин след ${depMed ? depMed.name : ''}`;
+        }
+      }
+
       html += `
-        <div class="pill-card bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-4 flex items-center gap-3.5 ${isTaken ? 'taken' : ''}">
+        <div class="pill-card bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-100 dark:border-slate-700/80 p-4 flex items-center gap-3.5 ${isTaken ? 'taken' : ''} ${locked ? 'opacity-60' : ''}">
           <div class="flex-1 min-w-0">
             <p class="pill-name font-semibold text-[15px] truncate text-slate-800 dark:text-slate-100">${med.name}</p>
             <p class="text-sm text-slate-400 dark:text-slate-500 mt-0.5 flex flex-wrap gap-x-1.5">
@@ -739,14 +782,18 @@ function renderToday() {
               ${med.form ? `<span>· ${med.form}</span>` : ''}
               ${condition ? `<span class="text-amber-500 dark:text-amber-400">· ${condition}</span>` : ''}
             </p>
+            ${locked ? `<p class="text-xs text-violet-500 mt-1">🔒 ${lockMsg}</p>` : ''}
+            ${!locked && med.dependsOn && !isTaken ? `<p class="text-xs text-violet-400 mt-1">${lockMsg}</p>` : ''}
             ${note ? `<p class="text-xs text-slate-400 mt-1">${note}</p>` : ''}
           </div>
-          <button onclick="toggleTaken('${med.id}', '${time}')"
+          <button onclick="${locked ? 'void(0)' : `toggleTaken('${med.id}', '${time}')`}"
             class="flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-200 text-lg
               ${isTaken
                 ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
-                : 'bg-slate-50 dark:bg-slate-700/80 hover:bg-primary-50 dark:hover:bg-primary-900/40 text-slate-300 hover:text-primary-500 border border-slate-100 dark:border-slate-600'}">
-            ${isTaken ? '✓' : ''}
+                : locked
+                  ? 'bg-slate-100 dark:bg-slate-700 text-slate-300 cursor-not-allowed'
+                  : 'bg-slate-50 dark:bg-slate-700/80 hover:bg-primary-50 dark:hover:bg-primary-900/40 text-slate-300 hover:text-primary-500 border border-slate-100 dark:border-slate-600'}">
+            ${isTaken ? '✓' : locked ? '🔒' : ''}
           </button>
         </div>`;
     });
@@ -805,6 +852,29 @@ function toggleTaken(medId, time) {
 }
 
 // ==================== MEDS CRUD ====================
+function daysRemaining(med) {
+  if (!med.endDate) return null;
+  const end = new Date(med.endDate);
+  end.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+  return diff;
+}
+
+function fillDependsOnSelect(excludeId) {
+  const sel = document.getElementById('med-depends-on');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Няма</option>';
+  meds.forEach(m => {
+    if (m.id === excludeId) return;
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name;
+    sel.appendChild(opt);
+  });
+}
+
 function renderMeds() {
   const list = document.getElementById('meds-list');
   const empty = document.getElementById('meds-empty');
@@ -821,10 +891,21 @@ function renderMeds() {
     const freqMap = {
       daily: 'Всеки ден',
       every_other: 'През ден',
-      specific_days: 'Конкретни дни',
-      course: 'Курс'
+      specific_days: 'Конкретни дни'
     };
     const condition = CONDITION_LABELS[med.condition] || '';
+    const rem = daysRemaining(med);
+    let remHtml = '';
+    if (rem !== null) {
+      if (rem < 0) remHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-500 text-xs">Курсът приключи</span>`;
+      else if (rem === 0) remHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-900/30 text-red-600 text-xs font-medium">Последен ден</span>`;
+      else if (rem <= 3) remHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-700 text-xs font-medium">Остават ${rem} дни</span>`;
+      else remHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 text-xs">Остават ${rem} дни</span>`;
+    }
+    const depMed = med.dependsOn ? meds.find(m => m.id === med.dependsOn) : null;
+    const depHtml = depMed
+      ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs">${med.dependsMin || 30} мин след ${depMed.name}</span>`
+      : '';
 
     return `
       <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
@@ -838,6 +919,8 @@ function renderMeds() {
               <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-medium">${times}</span>
               <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs">${freqMap[med.frequency] || 'Всеки ден'}</span>
               ${condition ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">${condition}</span>` : ''}
+              ${remHtml}
+              ${depHtml}
             </div>
             ${med.note ? `<p class="text-xs text-slate-400 mt-2">${med.note}</p>` : ''}
           </div>
@@ -863,8 +946,11 @@ function openAddMedModal() {
   document.getElementById('med-end').value = '';
   document.getElementById('med-duration').value = 'lifelong';
   document.getElementById('med-duration-value').value = '';
+  document.getElementById('med-depends-min').value = '30';
   document.querySelectorAll('.time-check').forEach(c => c.checked = false);
   document.querySelectorAll('.day-check').forEach(c => c.checked = false);
+  fillDependsOnSelect(null);
+  document.getElementById('med-depends-on').value = '';
   toggleFrequencyOptions();
   toggleDurationOptions();
   document.getElementById('med-modal').classList.remove('hidden');
@@ -886,6 +972,7 @@ function editMed(id) {
   document.getElementById('med-end').value = med.endDate || '';
   document.getElementById('med-duration').value = med.durationType || (med.endDate ? 'until' : 'lifelong');
   document.getElementById('med-duration-value').value = med.durationValue || '';
+  document.getElementById('med-depends-min').value = med.dependsMin || 30;
 
   document.querySelectorAll('.time-check').forEach(c => {
     c.checked = (med.times || []).includes(c.value);
@@ -893,6 +980,8 @@ function editMed(id) {
   document.querySelectorAll('.day-check').forEach(c => {
     c.checked = (med.days || []).includes(parseInt(c.value));
   });
+  fillDependsOnSelect(id);
+  document.getElementById('med-depends-on').value = med.dependsOn || '';
   toggleFrequencyOptions();
   toggleDurationOptions();
   document.getElementById('med-modal').classList.remove('hidden');
@@ -964,6 +1053,9 @@ function saveMed() {
   }
   // lifelong → endDate stays null
 
+  const dependsOn = document.getElementById('med-depends-on').value || null;
+  const dependsMin = parseInt(document.getElementById('med-depends-min').value) || 30;
+
   const medData = {
     name,
     dose: document.getElementById('med-dose').value.trim(),
@@ -976,6 +1068,8 @@ function saveMed() {
     endDate,
     durationType,
     durationValue: durationValue || null,
+    dependsOn,
+    dependsMin: dependsOn ? dependsMin : null,
     note: document.getElementById('med-note').value.trim(),
     updatedAt: new Date().toISOString()
   };
@@ -1162,6 +1256,174 @@ function renderCalendarDayDetail() {
     list.innerHTML = html;
   }
   detail.classList.remove('hidden');
+}
+
+// ==================== WEEKLY REVIEW ====================
+function renderWeekReview() {
+  const el = document.getElementById('week-review');
+  if (!el) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let perfect = 0, partial = 0, missed = 0, empty = 0;
+  const days = [];
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dayMeds = getMedsForDate(d);
+    const dateStr = formatDate(d);
+    const dayLog = logs[dateStr] || {};
+    let total = 0, taken = 0;
+    dayMeds.forEach(med => {
+      (med.times || []).forEach(t => {
+        total++;
+        if (dayLog[`${med.id}_${t}`]) taken++;
+      });
+    });
+    let status = 'empty';
+    if (total === 0) empty++;
+    else if (taken === total) { perfect++; status = 'perfect'; }
+    else if (taken > 0) { partial++; status = 'partial'; }
+    else if (d <= today) { missed++; status = 'missed'; }
+
+    const label = d.toLocaleDateString('bg-BG', { weekday: 'short', day: 'numeric' });
+    const colors = {
+      perfect: 'bg-emerald-500',
+      partial: 'bg-amber-400',
+      missed: 'bg-red-400',
+      empty: 'bg-slate-200 dark:bg-slate-600'
+    };
+    days.push(`<div class="flex flex-col items-center gap-1">
+      <div class="w-8 h-8 rounded-full ${colors[status]} flex items-center justify-center text-white text-xs font-bold">${taken || ''}</div>
+      <span class="text-[10px] text-slate-400">${label}</span>
+    </div>`);
+  }
+
+  el.innerHTML = `
+    <div class="flex justify-between mb-3">${days.join('')}</div>
+    <div class="grid grid-cols-3 gap-2 text-center">
+      <div class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
+        <p class="text-lg font-bold text-emerald-600">${perfect}</p>
+        <p class="text-[10px] text-slate-500">перфектни</p>
+      </div>
+      <div class="p-2 rounded-xl bg-amber-50 dark:bg-amber-900/20">
+        <p class="text-lg font-bold text-amber-600">${partial}</p>
+        <p class="text-[10px] text-slate-500">частични</p>
+      </div>
+      <div class="p-2 rounded-xl bg-red-50 dark:bg-red-900/20">
+        <p class="text-lg font-bold text-red-500">${missed}</p>
+        <p class="text-[10px] text-slate-500">пропуснати</p>
+      </div>
+    </div>
+    <p class="text-xs text-slate-400 mt-2 text-center">Последните 7 дни</p>
+  `;
+}
+
+// ==================== NOTIFICATIONS ====================
+function applyNotifToggle() {
+  const on = localStorage.getItem('pillflow_notif') === '1';
+  const knob = document.getElementById('notif-knob');
+  const btn = document.getElementById('notif-toggle');
+  if (knob && btn) {
+    if (on) {
+      knob.style.transform = 'translateX(20px)';
+      btn.classList.add('bg-primary-500');
+      btn.classList.remove('bg-slate-200', 'dark:bg-slate-600');
+    } else {
+      knob.style.transform = 'translateX(0)';
+      btn.classList.remove('bg-primary-500');
+      btn.classList.add('bg-slate-200');
+    }
+  }
+}
+
+function loadNotifTimes() {
+  const times = JSON.parse(localStorage.getItem('pillflow_notif_times') || '{}');
+  if (document.getElementById('notif-morning')) {
+    document.getElementById('notif-morning').value = times.morning || '08:00';
+    document.getElementById('notif-noon').value = times.noon || '13:00';
+    document.getElementById('notif-evening').value = times.evening || '19:00';
+    document.getElementById('notif-night').value = times.night || '22:00';
+  }
+}
+
+function saveNotifTimes() {
+  const times = {
+    morning: document.getElementById('notif-morning').value || '08:00',
+    noon: document.getElementById('notif-noon').value || '13:00',
+    evening: document.getElementById('notif-evening').value || '19:00',
+    night: document.getElementById('notif-night').value || '22:00'
+  };
+  localStorage.setItem('pillflow_notif_times', JSON.stringify(times));
+  scheduleNotifications();
+  alert('Часовете са запазени');
+}
+
+async function toggleNotifications() {
+  const on = localStorage.getItem('pillflow_notif') === '1';
+  if (!on) {
+    if (!('Notification' in window)) {
+      alert('Браузърът не поддържа известия');
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      alert('Нужно е разрешение за известия');
+      return;
+    }
+    localStorage.setItem('pillflow_notif', '1');
+    scheduleNotifications();
+  } else {
+    localStorage.setItem('pillflow_notif', '0');
+    // clear scheduled
+    if (window._notifTimers) {
+      window._notifTimers.forEach(t => clearTimeout(t));
+      window._notifTimers = [];
+    }
+  }
+  applyNotifToggle();
+}
+
+function scheduleNotifications() {
+  if (localStorage.getItem('pillflow_notif') !== '1') return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  if (window._notifTimers) window._notifTimers.forEach(t => clearTimeout(t));
+  window._notifTimers = [];
+
+  const times = JSON.parse(localStorage.getItem('pillflow_notif_times') || '{}');
+  const slots = {
+    morning: times.morning || '08:00',
+    noon: times.noon || '13:00',
+    evening: times.evening || '19:00',
+    night: times.night || '22:00'
+  };
+
+  const now = new Date();
+  Object.entries(slots).forEach(([slot, hhmm]) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const target = new Date();
+    target.setHours(h, m, 0, 0);
+    if (target <= now) target.setDate(target.getDate() + 1);
+    const delay = target - now;
+    const timer = setTimeout(() => {
+      const dayMeds = getMedsForDate(new Date());
+      const forSlot = dayMeds.filter(med => (med.times || []).includes(slot));
+      if (forSlot.length === 0) {
+        scheduleNotifications(); // reschedule next day
+        return;
+      }
+      const names = forSlot.map(m => m.name).join(', ');
+      new Notification('PillFlow – ' + TIME_LABELS[slot], {
+        body: `Време е: ${names}`,
+        icon: 'icon-192.png',
+        tag: 'pillflow-' + slot
+      });
+      scheduleNotifications();
+    }, delay);
+    window._notifTimers.push(timer);
+  });
 }
 
 // ==================== SETTINGS ====================

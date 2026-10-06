@@ -384,6 +384,48 @@
           </div>
         </div>
 
+        <!-- Седмичен преглед -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4">
+          <h3 class="font-bold mb-3">Седмичен преглед</h3>
+          <div id="week-review" class="space-y-2 text-sm">
+            <!-- filled by JS -->
+          </div>
+        </div>
+
+        <!-- Напомняния -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="font-medium">Напомняния</p>
+              <p class="text-xs text-slate-400">Известия за времената на деня</p>
+            </div>
+            <button id="notif-toggle" onclick="toggleNotifications()" class="relative w-12 h-7 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+              <span id="notif-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <label class="text-xs text-slate-400">Сутрин</label>
+              <input type="time" id="notif-morning" value="08:00" class="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400">Обяд</label>
+              <input type="time" id="notif-noon" value="13:00" class="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400">Вечер</label>
+              <input type="time" id="notif-evening" value="19:00" class="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400">Преди лягане</label>
+              <input type="time" id="notif-night" value="22:00" class="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm">
+            </div>
+          </div>
+          <button onclick="saveNotifTimes()" class="w-full py-2 rounded-xl border border-primary-300 text-primary-500 text-sm font-medium hover:bg-primary-50 dark:hover:bg-primary-900/20 transition">
+            Запази часовете
+          </button>
+        </div>
+
         <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700">
           <div class="p-4">
             <button onclick="switchTab('meds')" class="text-primary-500 font-medium text-sm hover:underline">Моите медикаменти →</button>
@@ -483,6 +525,18 @@
             <option value="before_food">30 мин преди храна</option>
             <option value="after_food">30 мин след храна</option>
           </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Зависимост от друго хапче</label>
+          <select id="med-depends-on" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+            <option value="">Няма</option>
+          </select>
+          <div class="mt-2 flex items-center gap-2">
+            <input type="number" id="med-depends-min" min="0" max="240" value="30" placeholder="30"
+              class="w-20 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+            <span class="text-sm text-slate-500">мин след вземане</span>
+          </div>
         </div>
 
         <div>
