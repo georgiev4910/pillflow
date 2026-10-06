@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0ea5e9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PillFlow">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>PillFlow – Тракер за медикаменти</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              200: '#bae6fd',
+              300: '#7dd3fc',
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              800: '#075985',
+              900: '#0c4a6e',
+            },
+            accent: {
+              500: '#10b981',
+              600: '#059669',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .pill-card {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .pill-card:active { transform: scale(0.98); }
+    .pill-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+    .taken { opacity: 0.6; }
+    .taken .pill-name { text-decoration: line-through; text-decoration-color: #94a3b8; }
+    .section-label {
+      letter-spacing: 0.05em;
+    }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .animate-spin { animation: spin 0.8s linear infinite; }
+    .border-3 { border-width: 3px; }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .dark ::-webkit-scrollbar-thumb { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen antialiased">
+
+  <!-- LOADING SPLASH (prevents login flash on refresh) -->
+  <div id="splash" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-br from-primary-500 via-primary-600 to-sky-600">
+    <div class="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center text-3xl mb-4 shadow-lg">💊</div>
+    <h1 class="text-white text-2xl font-bold tracking-tight">PillFlow</h1>
+    <div class="mt-6 w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+  </div>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary-500 text-white text-2xl font-bold mb-4 shadow-lg shadow-primary-500/30">
+          💊
+        </div>
+        <h1 class="text-3xl font-bold tracking-tight">PillFlow</h1>
+        <p class="text-slate-500 dark:text-slate-400 mt-2">Умно следене на медикаменти и добавки</p>
+      </div>
+
+      <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 border border-slate-200 dark:border-slate-700">
+        <div id="login-form">
+          <h2 class="text-lg font-semibold mb-4">Вход</h2>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Имейл</label>
+              <input type="email" id="login-email" placeholder="nina@example.com"
+                class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Парола</label>
+              <input type="password" id="login-password" placeholder="••••••••"
+                class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition">
+            </div>
+            <button type="button" onclick="handleLogin()" class="w-full py-3 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-semibold transition shadow-md shadow-primary-500/20">
+              Влез
+            </button>
+            <button type="button" onclick="showRegister()" class="w-full py-3 rounded-xl border-2 border-primary-500 text-primary-600 dark:text-primary-400 font-semibold hover:bg-primary-50 dark:hover:bg-primary-900/20 transition">
+              Създай нов акаунт
+            </button>
+          </div>
+        </div>
+
+        <div id="register-form" class="hidden">
+          <h2 class="text-lg font-semibold mb-4">Регистрация</h2>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Име</label>
+              <input type="text" id="reg-name" placeholder="Нина"
+                class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Имейл</label>
+              <input type="email" id="reg-email" placeholder="nina@example.com"
+                class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Парола</label>
+              <input type="password" id="reg-password" placeholder="••••••••"
+                class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition">
+            </div>
+            <button type="button" onclick="handleRegister()" class="w-full py-3 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-semibold transition shadow-md shadow-primary-500/20">
+              Създай акаунт
+            </button>
+            <button type="button" onclick="showLogin()" class="w-full py-3 rounded-xl border border-slate-300 dark:border-slate-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+              Назад към вход
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-center text-xs text-slate-400 mt-6">Работна версия · Данните се пазят локално</p>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app" class="hidden min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="sticky top-0 z-40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">
+      <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center text-lg">💊</div>
+          <div>
+            <h1 class="font-bold text-lg leading-tight">PillFlow</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400" id="user-greeting">Здравей</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="toggleDarkMode()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition" title="Тема">
+            <span id="theme-icon">🌙</span>
+          </button>
+          <button onclick="switchTab('settings')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-sm text-slate-500" title="Настройки">
+            ⚙️
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="flex-1 max-w-3xl mx-auto w-full px-4 py-4 pb-24">
+      <!-- TAB: ДНЕС -->
+      <div id="tab-today" class="tab-content active fade-in">
+        <!-- Hero progress card -->
+        <div id="today-hero" class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary-500 via-primary-600 to-sky-600 text-white p-5 mb-5 shadow-xl shadow-primary-500/25">
+          <div class="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white/10"></div>
+          <div class="absolute -right-2 bottom-0 w-20 h-20 rounded-full bg-white/5"></div>
+          <div class="relative flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <p class="text-white/70 text-sm font-medium" id="today-date">Днес</p>
+              <div class="flex items-center gap-2.5 mt-0.5">
+                <span id="hero-avatar" class="text-2xl leading-none">👩</span>
+                <h2 class="text-2xl font-bold tracking-tight" id="today-greeting">Добро утро</h2>
+              </div>
+              <div class="flex items-center gap-3 mt-3">
+                <div id="streak-badge" class="hidden items-center gap-1.5 bg-white/15 backdrop-blur px-3 py-1.5 rounded-full text-sm font-semibold">
+                  <span>🔥</span>
+                  <span id="streak-count">0</span>
+                  <span class="text-white/80 font-normal">дни</span>
+                </div>
+                <div id="complete-badge" class="hidden items-center gap-1.5 bg-emerald-400/20 backdrop-blur px-3 py-1.5 rounded-full text-sm font-semibold text-emerald-100">
+                  <span>✨</span> <span id="complete-text">Денят е завършен</span>
+                </div>
+              </div>
+            </div>
+            <!-- Circular progress -->
+            <div class="flex-shrink-0 relative w-16 h-16">
+              <svg class="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="3"/>
+                <circle id="progress-circle" cx="18" cy="18" r="15.5" fill="none" stroke="white" stroke-width="3"
+                  stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="97.4"
+                  class="transition-all duration-500 ease-out"/>
+              </svg>
+              <div class="absolute inset-0 flex items-center justify-center">
+                <span class="text-sm font-bold" id="progress-text">0/0</span>
+              </div>
+            </div>
+          </div>
+          <!-- Day navigation -->
+          <div class="relative flex items-center justify-between mt-4 pt-3 border-t border-white/15">
+            <button onclick="changeDay(-1)" class="p-1.5 rounded-lg hover:bg-white/10 transition text-white/80">←</button>
+            <button onclick="goToToday()" class="text-xs font-medium text-white/70 hover:text-white transition px-3 py-1 rounded-lg hover:bg-white/10">Към днес</button>
+            <button onclick="changeDay(1)" class="p-1.5 rounded-lg hover:bg-white/10 transition text-white/80">→</button>
+          </div>
+        </div>
+
+        <div id="today-sections" class="space-y-5">
+          <!-- Sections will be rendered here -->
+        </div>
+
+        <div id="today-empty" class="hidden text-center py-12">
+          <div class="w-20 h-20 mx-auto mb-4 rounded-3xl bg-gradient-to-br from-primary-100 to-sky-100 dark:from-primary-900/40 dark:to-sky-900/40 flex items-center justify-center text-4xl">💊</div>
+          <p class="text-slate-600 dark:text-slate-300 font-medium">Няма хапчета за този ден</p>
+          <p class="text-sm text-slate-400 mt-1 mb-5">Добави медикамент, за да започнеш</p>
+          <button onclick="openAddMedModal()" class="px-5 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-semibold transition shadow-md shadow-primary-500/20">
+            + Добави
+          </button>
+        </div>
+
+        <!-- Completion toast -->
+        <div id="complete-toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-[70] hidden pointer-events-none">
+          <div class="bg-emerald-500 text-white px-5 py-3 rounded-2xl shadow-xl shadow-emerald-500/30 font-semibold text-sm flex items-center gap-2 animate-bounce">
+            ✨ Браво! Денят е завършен
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: КАЛЕНДАР -->
+      <div id="tab-calendar" class="tab-content fade-in">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-xl font-bold" id="calendar-month">Октомври 2026</h2>
+          <div class="flex gap-2">
+            <button onclick="changeMonth(-1)" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">←</button>
+            <button onclick="changeMonth(1)" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">→</button>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <div class="grid grid-cols-7 text-center text-xs font-medium text-slate-500 dark:text-slate-400 py-2 border-b border-slate-200 dark:border-slate-700">
+            <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Нд</div>
+          </div>
+          <div id="calendar-grid" class="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-700">
+            <!-- Calendar days -->
+          </div>
+        </div>
+
+        <div id="calendar-day-detail" class="mt-4 hidden">
+          <h3 class="font-semibold mb-2" id="calendar-day-title">Детайли</h3>
+          <div id="calendar-day-list" class="space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- TAB: МОИТЕ МЕДИКАМЕНТИ -->
+      <div id="tab-meds" class="tab-content fade-in">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-xl font-bold">Моите медикаменти</h2>
+          <button onclick="openAddMedModal()" class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold transition shadow-md shadow-primary-500/20">
+            <span>+</span> Добави
+          </button>
+        </div>
+
+        <div id="meds-list" class="space-y-3">
+          <!-- Med cards -->
+        </div>
+
+        <div id="meds-empty" class="hidden text-center py-16">
+          <div class="text-5xl mb-4">💊</div>
+          <p class="text-slate-500 dark:text-slate-400 mb-4">Все още нямаш добавени медикаменти</p>
+          <button onclick="openAddMedModal()" class="px-5 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-semibold transition">
+            Добави първия
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB: НАСТРОЙКИ -->
+      <div id="tab-settings" class="tab-content fade-in">
+        <h2 class="text-xl font-bold mb-5">Настройки</h2>
+
+        <!-- Лични настройки - сгъваеми -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 mb-4 overflow-hidden">
+          <button onclick="toggleProfileSection()" class="w-full p-4 flex items-center gap-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+            <div id="profile-avatar" class="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-400 to-sky-500 flex items-center justify-center text-xl shadow-md flex-shrink-0">👩</div>
+            <div class="min-w-0 flex-1">
+              <p class="font-bold truncate" id="profile-display-name">—</p>
+              <p class="text-xs text-slate-400 truncate" id="settings-email">—</p>
+            </div>
+            <span id="profile-chevron" class="text-slate-400 text-lg transition-transform">›</span>
+          </button>
+          <div id="profile-body" class="hidden px-4 pb-4 space-y-3 border-t border-slate-100 dark:border-slate-700 pt-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Име</label>
+              <input type="text" id="profile-name" placeholder="напр. Нина"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Род (за поздрави)</label>
+              <div class="flex gap-2">
+                <button type="button" id="gender-f" onclick="selectGender('f')" class="flex-1 py-2 rounded-xl border text-sm font-medium transition">Жена</button>
+                <button type="button" id="gender-m" onclick="selectGender('m')" class="flex-1 py-2 rounded-xl border text-sm font-medium transition">Мъж</button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Аватар</label>
+              <div class="flex flex-wrap gap-2" id="avatar-picker">
+                <button type="button" onclick="selectAvatar('👩')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">👩</button>
+                <button type="button" onclick="selectAvatar('👨')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">👨</button>
+                <button type="button" onclick="selectAvatar('👧')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">👧</button>
+                <button type="button" onclick="selectAvatar('👦')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">👦</button>
+                <button type="button" onclick="selectAvatar('🧑')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">🧑</button>
+                <button type="button" onclick="selectAvatar('👵')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">👵</button>
+                <button type="button" onclick="selectAvatar('👴')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">👴</button>
+                <button type="button" onclick="selectAvatar('🧔')" class="avatar-opt w-10 h-10 rounded-xl text-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition">🧔</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Тегло (кг)</label>
+                <input type="number" id="profile-weight" placeholder="65" min="1" step="0.1"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Височина (см)</label>
+                <input type="number" id="profile-height" placeholder="168" min="1"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Кръвна група</label>
+              <select id="profile-blood" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+                <option value="">— не е посочена —</option>
+                <option value="A+">A+</option><option value="A-">A−</option>
+                <option value="B+">B+</option><option value="B-">B−</option>
+                <option value="AB+">AB+</option><option value="AB-">AB−</option>
+                <option value="O+">O+</option><option value="O-">O−</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Алергии / важни бележки</label>
+              <input type="text" id="profile-allergies" placeholder="напр. алергия към пеницилин"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+            </div>
+            <button onclick="saveProfile()" class="w-full py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold transition shadow-md shadow-primary-500/20">
+              Запази профила
+            </button>
+          </div>
+        </div>
+
+        <!-- Toggles -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700 mb-4">
+          <div class="p-4 flex items-center justify-between">
+            <div>
+              <p class="font-medium">Тъмна тема</p>
+              <p class="text-xs text-slate-400">Автоматично по системата, или ръчно</p>
+            </div>
+            <button id="theme-toggle" onclick="cycleTheme()" class="relative w-12 h-7 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+              <span id="theme-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+          <div class="p-4 flex items-center justify-between">
+            <div>
+              <p class="font-medium">Точки за хапчета в календара</p>
+              <p class="text-xs text-slate-400">Зелена/червена точка за всяко хапче</p>
+            </div>
+            <button id="cal-dots-toggle" onclick="toggleCalDots()" class="relative w-12 h-7 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+              <span id="cal-dots-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700">
+          <div class="p-4">
+            <button onclick="switchTab('meds')" class="text-primary-500 font-medium text-sm hover:underline">Моите медикаменти →</button>
+          </div>
+          <div class="p-4">
+            <button onclick="exportData()" class="text-primary-500 font-medium text-sm hover:underline">Експорт на данни (JSON)</button>
+          </div>
+          <div class="p-4">
+            <button onclick="clearAllData()" class="text-red-500 font-medium text-sm hover:underline">Изтрий всички данни</button>
+          </div>
+          <div class="p-4">
+            <button onclick="logout()" class="w-full py-2.5 rounded-xl border border-red-300 dark:border-red-700 text-red-500 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+              Изход от акаунта
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Navigation - 3 buttons -->
+    <nav class="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 safe-bottom">
+      <div class="max-w-3xl mx-auto grid grid-cols-3 items-end">
+        <button onclick="switchTab('calendar')" data-tab="calendar" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-2xl">📅</span>
+          <span class="text-xs mt-0.5 font-medium">Календар</span>
+        </button>
+        <button onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center -mt-5">
+          <div class="w-14 h-14 rounded-full bg-primary-500 text-white flex items-center justify-center text-2xl shadow-lg shadow-primary-500/40 ring-4 ring-white dark:ring-slate-800">
+            📋
+          </div>
+          <span class="text-xs mt-1 font-semibold text-primary-500">Днес</span>
+        </button>
+        <button onclick="openAddMedModal()" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-2xl">➕</span>
+          <span class="text-xs mt-0.5 font-medium">Добави</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ADD / EDIT MED MODAL -->
+  <div id="med-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeMedModal()"></div>
+    <div class="absolute bottom-0 left-0 right-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-lg w-full bg-white dark:bg-slate-800 rounded-t-3xl md:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="sticky top-0 bg-white dark:bg-slate-800 px-5 pt-5 pb-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+        <h3 class="text-lg font-bold" id="modal-title">Нов медикамент</h3>
+        <button onclick="closeMedModal()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">✕</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Име *</label>
+          <input type="text" id="med-name" placeholder="напр. Витамин D3"
+            class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Доза</label>
+            <input type="text" id="med-dose" placeholder="напр. 2000 IU"
+              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Форма</label>
+            <select id="med-form" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+              <option>Таблетка</option>
+              <option>Капсула</option>
+              <option>Течност</option>
+              <option>Прах</option>
+              <option>Друго</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Време на деня *</label>
+          <div class="flex flex-wrap gap-2" id="time-slots">
+            <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
+              <input type="checkbox" value="morning" class="time-check rounded text-primary-500"> Сутрин
+            </label>
+            <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
+              <input type="checkbox" value="noon" class="time-check rounded text-primary-500"> Обяд
+            </label>
+            <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
+              <input type="checkbox" value="evening" class="time-check rounded text-primary-500"> Вечер
+            </label>
+            <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
+              <input type="checkbox" value="night" class="time-check rounded text-primary-500"> Преди лягане
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Условие</label>
+          <select id="med-condition" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+            <option value="any">Без специално условие</option>
+            <option value="empty">На гладно</option>
+            <option value="food">С храна</option>
+            <option value="before_food">30 мин преди храна</option>
+            <option value="after_food">30 мин след храна</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Периодичност</label>
+          <select id="med-frequency" onchange="toggleFrequencyOptions()" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+            <option value="daily">Всеки ден</option>
+            <option value="every_other">През ден</option>
+            <option value="specific_days">Конкретни дни</option>
+          </select>
+        </div>
+
+        <div id="specific-days-options" class="hidden">
+          <label class="block text-sm font-medium mb-1.5">Дни от седмицата</label>
+          <div class="flex flex-wrap gap-2">
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer text-sm"><input type="checkbox" value="1" class="day-check"> Пн</label>
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer text-sm"><input type="checkbox" value="2" class="day-check"> Вт</label>
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer text-sm"><input type="checkbox" value="3" class="day-check"> Ср</label>
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer text-sm"><input type="checkbox" value="4" class="day-check"> Чт</label>
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer text-sm"><input type="checkbox" value="5" class="day-check"> Пт</label>
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer text-sm"><input type="checkbox" value="6" class="day-check"> Сб</label>
+            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer text-sm"><input type="checkbox" value="0" class="day-check"> Нд</label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Продължителност на приема</label>
+          <select id="med-duration" onchange="toggleDurationOptions()" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+            <option value="lifelong">Доживотно / безкрайно</option>
+            <option value="days">Брой дни</option>
+            <option value="weeks">Брой седмици</option>
+            <option value="months">Брой месеци</option>
+            <option value="until">До конкретна дата</option>
+          </select>
+        </div>
+
+        <div id="duration-number-options" class="hidden">
+          <label class="block text-sm font-medium mb-1.5">Колко?</label>
+          <input type="number" id="med-duration-value" min="1" placeholder="напр. 7" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+        </div>
+
+        <div id="duration-until-options" class="hidden">
+          <label class="block text-sm font-medium mb-1.5">До дата</label>
+          <input type="date" id="med-end" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Начална дата</label>
+          <input type="date" id="med-start" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Бележка (опционално)</label>
+          <input type="text" id="med-note" placeholder="напр. с много вода"
+            class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+        </div>
+
+        <div class="flex gap-3 pt-2">
+          <button onclick="closeMedModal()" class="flex-1 py-3 rounded-xl border border-slate-300 dark:border-slate-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+            Отказ
+          </button>
+          <button onclick="saveMed()" class="flex-1 py-3 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-semibold transition shadow-md shadow-primary-500/20">
+            Запази
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK (compat for simple script usage without build) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+  <script src="app.js"></script>
+</body>
+</html>
