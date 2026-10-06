@@ -289,6 +289,13 @@
         </div>
       </div>
 
+      <!-- TAB: СЕДМИЧЕН ПРЕГЛЕД -->
+      <div id="tab-week" class="tab-content fade-in">
+        <h2 class="text-xl font-bold mb-1">Седмичен преглед</h2>
+        <p class="text-sm text-slate-400 mb-5">Последните 7 дни</p>
+        <div id="week-review" class="space-y-2 text-sm"></div>
+      </div>
+
       <!-- TAB: НАСТРОЙКИ -->
       <div id="tab-settings" class="tab-content fade-in">
         <h2 class="text-xl font-bold mb-5">Настройки</h2>
@@ -384,14 +391,6 @@
           </div>
         </div>
 
-        <!-- Седмичен преглед -->
-        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4">
-          <h3 class="font-bold mb-3">Седмичен преглед</h3>
-          <div id="week-review" class="space-y-2 text-sm">
-            <!-- filled by JS -->
-          </div>
-        </div>
-
         <!-- Напомняния -->
         <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-3">
           <div class="flex items-center justify-between">
@@ -445,22 +444,26 @@
       </div>
     </main>
 
-    <!-- Bottom Navigation - 3 buttons -->
+    <!-- Bottom Navigation -->
     <nav class="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 safe-bottom">
-      <div class="max-w-3xl mx-auto grid grid-cols-3 items-end">
+      <div class="max-w-3xl mx-auto grid grid-cols-4 items-end">
         <button onclick="switchTab('calendar')" data-tab="calendar" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <span class="text-2xl">📅</span>
-          <span class="text-xs mt-0.5 font-medium">Календар</span>
+          <span class="text-xl">📅</span>
+          <span class="text-[10px] mt-0.5 font-medium">Календар</span>
         </button>
-        <button onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center -mt-5">
-          <div class="w-14 h-14 rounded-full bg-primary-500 text-white flex items-center justify-center text-2xl shadow-lg shadow-primary-500/40 ring-4 ring-white dark:ring-slate-800">
+        <button onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center -mt-4">
+          <div class="w-12 h-12 rounded-full bg-primary-500 text-white flex items-center justify-center text-xl shadow-lg shadow-primary-500/40 ring-4 ring-white dark:ring-slate-800">
             📋
           </div>
-          <span class="text-xs mt-1 font-semibold text-primary-500">Днес</span>
+          <span class="text-[10px] mt-1 font-semibold text-primary-500">Днес</span>
+        </button>
+        <button onclick="switchTab('week')" data-tab="week" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-xl">📊</span>
+          <span class="text-[10px] mt-0.5 font-medium">Преглед</span>
         </button>
         <button onclick="openAddMedModal()" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <span class="text-2xl">➕</span>
-          <span class="text-xs mt-0.5 font-medium">Добави</span>
+          <span class="text-xl">➕</span>
+          <span class="text-[10px] mt-0.5 font-medium">Добави</span>
         </button>
       </div>
     </nav>

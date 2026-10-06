@@ -302,8 +302,6 @@ function applyProfileToUI() {
   }
   const ct = document.getElementById('complete-text');
   if (ct) ct.textContent = 'Готово';
-  // Refresh hero if on today
-  if (typeof renderToday === 'function') renderToday();
 }
 
 function toggleProfileSection() {
@@ -396,69 +394,90 @@ function selectAvatar(emoji) {
 }
 
 function saveProfile() {
-  const name = document.getElementById('profile-name').value.trim();
+  const nameEl = document.getElementById('profile-name');
+  const name = (nameEl && nameEl.value || '').trim();
   if (!name) {
     alert('Моля въведи име');
     return;
   }
+
+  const weightEl = document.getElementById('profile-weight');
+  const heightEl = document.getElementById('profile-height');
+  const bloodEl = document.getElementById('profile-blood');
+  const allergiesEl = document.getElementById('profile-allergies');
+
   profile = {
-    name,
-    avatar: selectedAvatar,
+    name: name,
+    avatar: selectedAvatar || profile.avatar || '👩',
     gender: profile.gender || 'f',
-    weight: document.getElementById('profile-weight').value || '',
-    height: document.getElementById('profile-height').value || '',
-    blood: document.getElementById('profile-blood').value || '',
-    allergies: document.getElementById('profile-allergies').value.trim() || '',
+    weight: weightEl ? String(weightEl.value || '') : (profile.weight || ''),
+    height: heightEl ? String(heightEl.value || '') : (profile.height || ''),
+    blood: bloodEl ? String(bloodEl.value || '') : (profile.blood || ''),
+    allergies: allergiesEl ? String(allergiesEl.value || '').trim() : (profile.allergies || ''),
     updatedAt: new Date().toISOString()
   };
 
-  // Always save locally as backup
-  localStorage.setItem(`pillflow_profile_${currentUser.uid}`, JSON.stringify(profile));
+  // Local backup always
+  try {
+    localStorage.setItem('pillflow_profile_' + currentUser.uid, JSON.stringify(profile));
+  } catch (e) { console.warn(e); }
+
   currentUser.displayName = name;
   applyProfileToUI();
-  renderToday();
+  if (typeof renderToday === 'function') renderToday();
 
-  if (firebaseReady) {
-    // Save under subcollection so Firestore rules allow it
-    // path: users/{uid}/profile/main
+  if (firebaseReady && db) {
     db.collection('users').doc(currentUser.uid).collection('profile').doc('main')
       .set(profile, { merge: true })
-      .then(() => {
-        if (auth.currentUser) {
-          auth.currentUser.updateProfile({ displayName: name }).catch(() => {});
+      .then(function () {
+        if (auth && auth.currentUser) {
+          auth.currentUser.updateProfile({ displayName: name }).catch(function () {});
         }
-        console.log('✅ Profile saved to cloud');
+        console.log('Profile saved', profile);
+        alert('Профилът е запазен');
       })
-      .catch(err => {
-        console.error('Profile save error:', err);
-        alert('Запазено локално, но облакът върна грешка: ' + err.message);
+      .catch(function (err) {
+        console.error(err);
+        alert('Запазено на устройството. Облак: ' + err.message);
       });
+  } else {
+    alert('Профилът е запазен на устройството');
   }
 }
 
 function loadProfile() {
-  // Load local first (instant)
-  const saved = localStorage.getItem(`pillflow_profile_${currentUser.uid}`);
-  if (saved) {
-    try { profile = { gender: 'f', avatar: '👩', ...JSON.parse(saved) }; } catch(e) {}
-  } else {
-    profile = { name: currentUser.displayName || '', avatar: '👩', gender: 'f', weight: '', height: '', blood: '', allergies: '' };
-  }
-  applyProfileToUI();
-  renderToday();
+  var defaults = { name: '', avatar: '👩', gender: 'f', weight: '', height: '', blood: '', allergies: '' };
 
-  if (firebaseReady) {
-    // Then sync from cloud (overrides local if exists)
+  // 1) Local first
+  try {
+    var saved = localStorage.getItem('pillflow_profile_' + currentUser.uid);
+    if (saved) {
+      profile = Object.assign({}, defaults, JSON.parse(saved));
+    } else {
+      profile = Object.assign({}, defaults, { name: currentUser.displayName || '' });
+    }
+  } catch (e) {
+    profile = Object.assign({}, defaults, { name: currentUser.displayName || '' });
+  }
+  selectedAvatar = profile.avatar || '👩';
+  applyProfileToUI();
+
+  // 2) Cloud overrides
+  if (firebaseReady && db) {
+    if (unsubProfile) { unsubProfile(); unsubProfile = null; }
     unsubProfile = db.collection('users').doc(currentUser.uid)
       .collection('profile').doc('main')
-      .onSnapshot(doc => {
+      .onSnapshot(function (doc) {
         if (doc.exists) {
-          profile = { gender: 'f', avatar: '👩', ...doc.data() };
-          localStorage.setItem(`pillflow_profile_${currentUser.uid}`, JSON.stringify(profile));
+          profile = Object.assign({}, defaults, doc.data());
+          selectedAvatar = profile.avatar || '👩';
+          try {
+            localStorage.setItem('pillflow_profile_' + currentUser.uid, JSON.stringify(profile));
+          } catch (e) {}
           applyProfileToUI();
-          renderToday();
+          if (typeof renderToday === 'function') renderToday();
         }
-      }, err => console.error('Profile load error:', err));
+      }, function (err) { console.error('Profile load error', err); });
   }
 }
 
@@ -496,8 +515,8 @@ function switchTab(tab) {
   if (tab === 'today') renderToday();
   if (tab === 'calendar') renderCalendar();
   if (tab === 'meds') renderMeds();
+  if (tab === 'week') renderWeekReview();
   if (tab === 'settings') {
-    renderWeekReview();
     applyNotifToggle();
     loadNotifTimes();
   }
