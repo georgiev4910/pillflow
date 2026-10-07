@@ -1,3 +1,4 @@
+// PillFlow main app — date helpers: js/dates.js, log helpers: js/logs.js
 // ==================== FIREBASE INIT ====================
 const firebaseConfig = {
   apiKey: "AIzaSyAdh15OILXjv7bP8G71YxNZFcOdL6G-pkA",
@@ -56,36 +57,9 @@ const CONDITION_LABELS = {
 };
 
 // ==================== HELPERS ====================
-function formatDate(d) {
-  // Local timezone date key — avoids UTC shift near midnight
-  const x = (d instanceof Date) ? d : new Date(d);
-  const y = x.getFullYear();
-  const m = String(x.getMonth() + 1).padStart(2, '0');
-  const day = String(x.getDate()).padStart(2, '0');
-  return y + '-' + m + '-' + day;
-}
+// date helpers → js/dates.js
 
-function localDateInputValue(d) {
-  return formatDate(d || new Date());
-}
 
-function parseLocalDate(str) {
-  // Parse YYYY-MM-DD as local midnight (not UTC)
-  if (!str) return null;
-  const p = String(str).split('-').map(Number);
-  if (p.length < 3) return null;
-  return new Date(p[0], p[1] - 1, p[2]);
-}
-
-function formatDisplayDate(d) {
-  return d.toLocaleDateString('bg-BG', { weekday: 'long', day: 'numeric', month: 'long' });
-}
-
-function isSameDay(d1, d2) {
-  return formatDate(d1) === formatDate(d2);
-}
-
-// ==================== AUTH UI ====================
 function showRegister() {
   const loginForm = document.getElementById('login-form');
   const regForm = document.getElementById('register-form');
@@ -439,8 +413,7 @@ function applyStockToggle() {
     }
   }
   // Hide per-med stock UI in modal when global off
-  const box = document.getElementById('med-track-stock');
-  const stockWrap = box ? box.closest('.p-3') : null;
+  const stockWrap = document.getElementById('stock-track-wrap');
   if (stockWrap) stockWrap.classList.toggle('hidden', !on);
 }
 
@@ -631,7 +604,7 @@ function renderProfilePage() {
     var dayLog = logs[formatDate(d)] || {};
     dayMeds.forEach(function (med) {
       (med.times || []).forEach(function (t) {
-        if (dayLog[med.id + '_' + t]) takenTotal++;
+        if (isLogTaken(dayLog, med.id + '_' + t)) takenTotal++;
       });
     });
   }
@@ -821,7 +794,7 @@ function isDayComplete(date) {
   dayMeds.forEach(med => {
     (med.times || []).forEach(t => {
       total++;
-      if (dayLog[`${med.id}_${t}`]) taken++;
+      if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
     });
   });
   return total > 0 && taken === total;
@@ -879,7 +852,7 @@ function renderToday() {
   dayMeds.forEach(med => {
     (med.times || []).forEach(t => {
       total++;
-      if (dayLog[`${med.id}_${t}`]) taken++;
+      if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
     });
   });
 
@@ -1005,7 +978,7 @@ function renderToday() {
     const items = sections[timeKey];
     if (items.length === 0) return;
 
-    const sectionTaken = items.filter(({ med, time }) => dayLog[`${med.id}_${time}`]).length;
+    const sectionTaken = items.filter(({ med, time }) => isLogTaken(dayLog, med.id + '_' + time)).length;
 
     const allDone = sectionTaken === items.length && items.length > 0;
     html += `<div>
@@ -1022,7 +995,8 @@ function renderToday() {
 
     items.forEach(({ med, time }) => {
       const key = `${med.id}_${time}`;
-      const isTaken = !!dayLog[key];
+      const isTaken = isLogTaken(dayLog, key);
+      const skipReason = getLogReason(dayLog, key);
       const condition = CONDITION_LABELS[med.condition] || '';
       const note = med.note ? med.note : '';
 
@@ -1037,7 +1011,7 @@ function renderToday() {
         let anyDepTaken = false;
         if (depMed) {
           (depMed.times || []).forEach(t => {
-            if (dayLog[`${depMed.id}_${t}`]) anyDepTaken = true;
+            if (isLogTaken(dayLog, depMed.id + '_' + t)) anyDepTaken = true;
           });
         }
         if (!anyDepTaken) {
@@ -1061,17 +1035,21 @@ function renderToday() {
             </p>
             ${locked ? `<p class="text-xs text-violet-500 mt-1">🔒 ${lockMsg}</p>` : ''}
             ${!locked && med.dependsOn && !isTaken ? `<p class="text-xs text-violet-400 mt-1">${lockMsg}</p>` : ''}
+            ${skipReason ? `<p class="text-xs text-amber-600 mt-1">Пропуск: ${SKIP_REASON_LABELS[skipReason] || skipReason}</p>` : ''}
             ${note ? `<p class="text-xs text-slate-400 mt-1">${note}</p>` : ''}
           </div>
-          <button onclick="${locked ? 'void(0)' : `toggleTaken('${med.id}', '${time}')`}"
-            class="flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-200 text-lg
-              ${isTaken
-                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
-                : locked
-                  ? 'bg-slate-100 dark:bg-slate-700 text-slate-300 cursor-not-allowed'
-                  : 'bg-slate-50 dark:bg-slate-700/80 hover:bg-primary-50 dark:hover:bg-primary-900/40 text-slate-300 hover:text-primary-500 border border-slate-100 dark:border-slate-600'}">
-            ${isTaken ? '✓' : locked ? '🔒' : ''}
-          </button>
+          <div class="flex flex-col gap-1 flex-shrink-0">
+            <button onclick="${locked ? 'void(0)' : `toggleTaken('${med.id}', '${time}')`}"
+              class="w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-200 text-lg
+                ${isTaken
+                  ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
+                  : locked
+                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-300 cursor-not-allowed'
+                    : 'bg-slate-50 dark:bg-slate-700/80 hover:bg-primary-50 dark:hover:bg-primary-900/40 text-slate-300 hover:text-primary-500 border border-slate-100 dark:border-slate-600'}">
+              ${isTaken ? '✓' : locked ? '🔒' : ''}
+            </button>
+            ${(!isTaken && !locked && isSameDay(currentDate, new Date())) ? `<button onclick="markSkipped('${med.id}', '${time}')" class="text-[10px] text-slate-400 hover:text-amber-600 py-0.5" title="Отбележи пропуск">пропуск</button>` : ''}
+          </div>
         </div>`;
     });
 
@@ -1108,49 +1086,118 @@ function adjustStock(medId, delta) {
   }
 }
 
-function toggleTaken(medId, time, opts) {
-  opts = opts || {};
+function toggleMedAdvanced() {
+  const el = document.getElementById('med-advanced');
+  const btn = document.getElementById('med-advanced-btn');
+  if (!el) return;
+  const open = el.classList.toggle('hidden') === false;
+  // classList.toggle returns boolean: true if class was added
+  // we want open when NOT hidden
+  const isHidden = el.classList.contains('hidden');
+  if (btn) btn.textContent = isHidden ? '▸ Разширени настройки' : '▾ Разширени настройки';
+}
+
+function onMedsSearch() {
+  renderMeds();
+}
+
+let _skipPending = null; // { medId, time, dateStr }
+
+function openSkipModal(medId, time, fromUnmark) {
+  _skipPending = { medId: medId, time: time, dateStr: formatDate(currentDate), fromUnmark: !!fromUnmark };
+  const med = meds.find(m => m.id === medId);
+  const label = document.getElementById('skip-med-label');
+  if (label) label.textContent = (med ? med.name : 'Медикамент') + ' · ' + (TIME_LABELS[time] || time);
+  const m = document.getElementById('skip-modal');
+  if (m) m.classList.remove('hidden');
+}
+
+function closeSkipModal(writeSkip) {
+  const m = document.getElementById('skip-modal');
+  if (m) m.classList.add('hidden');
+  // if dismiss without reason and was unchecking taken → just unmark without reason
+  if (writeSkip && _skipPending && _skipPending.fromUnmark) {
+    applyLogChange(_skipPending.medId, _skipPending.time, { taken: false, reason: null });
+  }
+  _skipPending = null;
+}
+
+function confirmSkip(reason) {
+  if (!_skipPending) return;
+  const { medId, time } = _skipPending;
+  _skipPending = null;
+  const m = document.getElementById('skip-modal');
+  if (m) m.classList.add('hidden');
+  applyLogChange(medId, time, { taken: false, reason: reason });
+}
+
+function applyLogChange(medId, time, state) {
+  // state: { taken: true } | { taken: false, reason }
   const dateStr = formatDate(currentDate);
-  const key = `${medId}_${time}`;
-  const current = !!(logs[dateStr] && logs[dateStr][key]);
+  const key = medId + '_' + time;
+  const wasTaken = isLogTaken(logs[dateStr] || {}, key);
   const wasComplete = isDayComplete(currentDate);
-  const marking = !current;
+
+  let value;
+  if (state.taken) {
+    value = true;
+  } else if (state.reason) {
+    value = logEntrySkipped(state.reason);
+  } else {
+    value = null; // delete
+  }
 
   if (firebaseReady) {
     const ref = db.collection('users').doc(currentUser.uid).collection('logs').doc(dateStr);
-    if (current) {
-      ref.update({ [key]: firebase.firestore.FieldValue.delete() }).catch(() => {
+    if (value === null) {
+      ref.update({ [key]: firebase.firestore.FieldValue.delete() }).catch(function () {
         ref.set({}, { merge: true });
       });
-      if (!opts.skipStock) adjustStock(medId, +1);
     } else {
-      ref.set({ [key]: true }, { merge: true });
-      if (!opts.skipStock) adjustStock(medId, -1);
+      ref.set({ [key]: value }, { merge: true });
     }
-    if (!opts.silent) {
-      setTimeout(() => {
-        if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
-        renderToday();
-        renderCalendar();
-      }, 350);
-    }
-  } else {
-    if (!logs[dateStr]) logs[dateStr] = {};
-    if (current) {
-      delete logs[dateStr][key];
-      if (!opts.skipStock) adjustStock(medId, +1);
-    } else {
-      logs[dateStr][key] = true;
-      if (!opts.skipStock) adjustStock(medId, -1);
-    }
-    saveLocalData(currentUser.uid, { meds, logs });
-    if (!opts.silent) {
+    if (wasTaken && !state.taken && !state.skipStock) adjustStock(medId, +1);
+    if (!wasTaken && state.taken && !state.skipStock) adjustStock(medId, -1);
+    setTimeout(function () {
+      if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
       renderToday();
       renderCalendar();
-      renderTakenHistory();
-      if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
-    }
+      if (typeof renderTakenHistory === 'function') renderTakenHistory();
+    }, 350);
+  } else {
+    if (!logs[dateStr]) logs[dateStr] = {};
+    if (value === null) delete logs[dateStr][key];
+    else logs[dateStr][key] = value;
+    if (wasTaken && !state.taken) adjustStock(medId, +1);
+    if (!wasTaken && state.taken) adjustStock(medId, -1);
+    saveLocalData(currentUser.uid, { meds, logs });
+    renderToday();
+    renderCalendar();
+    if (typeof renderTakenHistory === 'function') renderTakenHistory();
+    if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
   }
+}
+
+function toggleTaken(medId, time, opts) {
+  opts = opts || {};
+  const dateStr = formatDate(currentDate);
+  const key = medId + '_' + time;
+  const current = isLogTaken(logs[dateStr] || {}, key);
+
+  if (current) {
+    // Unmarking taken → ask for skip reason (unless silent batch)
+    if (opts.silent) {
+      applyLogChange(medId, time, { taken: false, reason: null, skipStock: opts.skipStock });
+    } else {
+      openSkipModal(medId, time, true);
+    }
+  } else {
+    applyLogChange(medId, time, { taken: true, skipStock: opts.skipStock });
+  }
+}
+
+function markSkipped(medId, time) {
+  openSkipModal(medId, time, false);
 }
 
 function takeAllForSlot(timeKey) {
@@ -1163,13 +1210,13 @@ function takeAllForSlot(timeKey) {
   dayMeds.forEach(med => {
     if (!(med.times || []).includes(timeKey)) return;
     const key = med.id + '_' + timeKey;
-    if (dayLog[key]) return;
+    if (isLogTaken(dayLog, key)) return;
     // skip locked by dependency
     if (med.dependsOn) {
       const depMed = meds.find(m => m.id === med.dependsOn);
       let anyDep = false;
       if (depMed) {
-        (depMed.times || []).forEach(t => { if (dayLog[depMed.id + '_' + t]) anyDep = true; });
+        (depMed.times || []).forEach(t => { if (isLogTaken(dayLog, depMed.id + '_' + t)) anyDep = true; });
       }
       if (!anyDep) return;
     }
@@ -1228,7 +1275,14 @@ function renderMeds() {
     }
   }
 
-  const filtered = meds.filter(m => sub === 'archive' ? m.archived === true : m.archived !== true);
+  let filtered = meds.filter(m => sub === 'archive' ? m.archived === true : m.archived !== true);
+  const q = (document.getElementById('meds-search') && document.getElementById('meds-search').value || '').trim().toLowerCase();
+  if (q) {
+    filtered = filtered.filter(m => {
+      const hay = [m.name, m.dose, m.form, m.note].filter(Boolean).join(' ').toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+  }
 
   if (filtered.length === 0) {
     list.innerHTML = '';
@@ -1431,6 +1485,10 @@ function toggleStockFields() {
 function openAddMedModal() {
   editingMedId = null;
   document.getElementById('modal-title').textContent = 'Нов медикамент';
+  var adv = document.getElementById('med-advanced');
+  if (adv) adv.classList.add('hidden');
+  var advBtn = document.getElementById('med-advanced-btn');
+  if (advBtn) advBtn.textContent = '▸ Разширени настройки';
   var pauseBox = document.getElementById('med-pause-box');
   if (pauseBox) pauseBox.classList.add('hidden');
   var act = document.getElementById('med-active');
@@ -1471,6 +1529,10 @@ function editMed(id) {
 
   editingMedId = id;
   document.getElementById('modal-title').textContent = 'Редактирай медикамент';
+  var adv = document.getElementById('med-advanced');
+  if (adv) adv.classList.remove('hidden');
+  var advBtn = document.getElementById('med-advanced-btn');
+  if (advBtn) advBtn.textContent = '▾ Разширени настройки';
   var pauseBox = document.getElementById('med-pause-box');
   if (pauseBox) pauseBox.classList.remove('hidden');
   var act = document.getElementById('med-active');
@@ -1697,7 +1759,7 @@ function renderCalendar() {
     dayMeds.forEach(med => {
       (med.times || []).forEach(t => {
         total++;
-        if (dayLog[`${med.id}_${t}`]) taken++;
+        if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
       });
     });
 
@@ -1711,7 +1773,7 @@ function renderCalendar() {
         const dots = [];
         dayMeds.forEach(med => {
           (med.times || []).forEach(t => {
-            const isTaken = !!dayLog[`${med.id}_${t}`];
+            const isTaken = isLogTaken(dayLog, med.id + '_' + t);
             if (isTaken) {
               dots.push('<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>');
             } else if (date <= today) {
@@ -1777,7 +1839,7 @@ function renderCalendarDayDetail() {
   dayMeds.forEach(med => {
     (med.times || []).forEach(t => {
       totalCount++;
-      const isTaken = !!dayLog[med.id + '_' + t];
+      const isTaken = isLogTaken(dayLog, med.id + '_' + t);
       if (isTaken) {
         takenCount++;
         takenNames.push(med.name + (med.dose ? ' (' + med.dose + ')' : '') + ' · ' + (TIME_LABELS[t] || t));
@@ -1789,14 +1851,14 @@ function renderCalendarDayDetail() {
             <p class="font-medium text-sm truncate">${med.name}</p>
             <p class="text-xs text-slate-400">${TIME_LABELS[t]}${med.dose ? ' · ' + med.dose : ''}</p>
           </div>
-          <span class="text-xs font-medium ${isTaken ? 'text-emerald-500' : 'text-slate-400'}">${isTaken ? 'Взето' : 'Пропуснато'}</span>
+          <span class="text-xs font-medium ${isTaken ? 'text-emerald-500' : 'text-slate-400'}">${isTaken ? 'Взето' : (getLogReason(dayLog, med.id + '_' + t) ? 'Пропуск: ' + (SKIP_REASON_LABELS[getLogReason(dayLog, med.id + '_' + t)] || '') : 'Пропуснато')}</span>
         </div>`;
     });
   });
 
   // Also show log entries for meds no longer scheduled that day
   Object.keys(dayLog).forEach(function (key) {
-    if (!dayLog[key]) return;
+    if (!isLogTaken(dayLog, key) && !(dayLog[key] && typeof dayLog[key] === 'object')) return;
     const parts = key.split('_');
     const medId = parts[0];
     const slot = parts.slice(1).join('_');
@@ -1843,7 +1905,7 @@ function renderTakenHistory() {
   Object.keys(logs || {}).sort().reverse().forEach(function (dateStr) {
     const dayLog = logs[dateStr] || {};
     Object.keys(dayLog).forEach(function (key) {
-      if (!dayLog[key]) return;
+      if (!isLogTaken(dayLog, key) && !(dayLog[key] && typeof dayLog[key] === 'object')) return;
       const parts = key.split('_');
       const medId = parts[0];
       const slot = parts.slice(1).join('_');
@@ -1898,7 +1960,7 @@ function renderWeekReview() {
     dayMeds.forEach(med => {
       (med.times || []).forEach(t => {
         total++;
-        if (dayLog[`${med.id}_${t}`]) taken++;
+        if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
       });
     });
     let status = 'empty';
@@ -2080,7 +2142,7 @@ function scheduleNotifications() {
         var d = new Date();
         var dateStr = formatDate(d);
         var dayLog = logs[dateStr] || {};
-        if (dayLog[med.id + '_' + slot]) {
+        if (isLogTaken(dayLog, med.id + '_' + slot)) {
           scheduleNotifications();
           return;
         }
@@ -2161,7 +2223,7 @@ function renderTrendsChart() {
     dayMeds.forEach(med => {
       (med.times || []).forEach(t => {
         total++;
-        if (dayLog[med.id + '_' + t]) taken++;
+        if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
       });
     });
     const pct = total === 0 ? 0 : Math.round((taken / total) * 100);
@@ -2200,9 +2262,10 @@ function generateDoctorReport() {
     dayMeds.forEach(med => {
       (med.times || []).forEach(slot => {
         t++;
-        const ok = !!dayLog[med.id + '_' + slot];
+        const ok = isLogTaken(dayLog, med.id + '_' + slot);
         if (ok) tk++;
-        lines.push({ med: med.name, slot: TIME_LABELS[slot] || slot, ok: ok, dose: med.dose || '' });
+        const reason = getLogReason(dayLog, med.id + '_' + slot);
+        lines.push({ med: med.name, slot: TIME_LABELS[slot] || slot, ok: ok, dose: med.dose || '', reason: reason });
       });
     });
     totalDoses += t;
