@@ -156,16 +156,33 @@
     <!-- Header -->
     <header class="sticky top-0 z-40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">
       <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center text-lg">💊</div>
-          <h1 class="font-bold text-lg leading-tight">PillFlow</h1>
+        <div class="relative">
+          <button onclick="toggleAppMenu()" class="flex items-center gap-2.5 p-1 pr-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+            <div class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center text-lg shadow-sm">💊</div>
+            <div class="text-left">
+              <h1 class="font-bold text-lg leading-tight">PillFlow</h1>
+              <p class="text-[10px] text-slate-400 -mt-0.5">меню ▾</p>
+            </div>
+          </button>
+          <div id="app-menu" class="hidden absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl z-50 overflow-hidden py-1">
+            <button onclick="menuGo('profile')" class="w-full px-4 py-3 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+              <span class="text-lg">👤</span> Лична страница
+            </button>
+            <button onclick="menuGo('meds')" class="w-full px-4 py-3 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+              <span class="text-lg">💊</span> Моите лекарства
+            </button>
+            <button onclick="menuGo('settings')" class="w-full px-4 py-3 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+              <span class="text-lg">⚙️</span> Настройки
+            </button>
+            <div class="border-t border-slate-100 dark:border-slate-700 my-1"></div>
+            <button onclick="menuGo('logout')" class="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3">
+              <span class="text-lg">🚪</span> Изход
+            </button>
+          </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1">
           <button onclick="toggleDarkMode()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition" title="Тема">
             <span id="theme-icon">🌙</span>
-          </button>
-          <button onclick="switchTab('settings')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition text-sm text-slate-500" title="Настройки">
-            ⚙️
           </button>
         </div>
       </div>
@@ -265,6 +282,13 @@
           <h3 class="font-semibold mb-2" id="calendar-day-title">Детайли</h3>
           <div id="calendar-day-list" class="space-y-2"></div>
         </div>
+
+        <!-- Седмичен преглед под календара -->
+        <div class="mt-6">
+          <h3 class="font-bold mb-1">Седмичен преглед</h3>
+          <p class="text-xs text-slate-400 mb-3">Последните 7 дни</p>
+          <div id="week-review" class="space-y-2 text-sm"></div>
+        </div>
       </div>
 
       <!-- TAB: МОИТЕ МЕДИКАМЕНТИ -->
@@ -287,13 +311,6 @@
             Добави първия
           </button>
         </div>
-      </div>
-
-      <!-- TAB: СЕДМИЧЕН ПРЕГЛЕД -->
-      <div id="tab-week" class="tab-content fade-in">
-        <h2 class="text-xl font-bold mb-1">Седмичен преглед</h2>
-        <p class="text-sm text-slate-400 mb-5">Последните 7 дни</p>
-        <div id="week-review" class="space-y-2 text-sm"></div>
       </div>
 
       <!-- TAB: НАСТРОЙКИ -->
@@ -444,26 +461,28 @@
       </div>
     </main>
 
-    <!-- Bottom Navigation -->
+    <!-- FAB Добави -->
+    <button id="fab-add" onclick="openAddMedModal()" title="Добави медикамент"
+      class="fixed z-[55] right-4 bottom-24 md:bottom-8 w-14 h-14 rounded-full bg-primary-500 hover:bg-primary-600 text-white text-2xl shadow-xl shadow-primary-500/40 flex items-center justify-center transition active:scale-95 ring-4 ring-white/80 dark:ring-slate-900/80">
+      +
+    </button>
+
+    <!-- Bottom Navigation - 3 бутона -->
     <nav class="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 safe-bottom">
-      <div class="max-w-3xl mx-auto grid grid-cols-4 items-end">
+      <div class="max-w-3xl mx-auto grid grid-cols-3 items-end">
         <button onclick="switchTab('calendar')" data-tab="calendar" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <span class="text-xl">📅</span>
-          <span class="text-[10px] mt-0.5 font-medium">Календар</span>
+          <span class="text-2xl">📅</span>
+          <span class="text-xs mt-0.5 font-medium">Календар</span>
         </button>
-        <button onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center -mt-4">
-          <div class="w-12 h-12 rounded-full bg-primary-500 text-white flex items-center justify-center text-xl shadow-lg shadow-primary-500/40 ring-4 ring-white dark:ring-slate-800">
+        <button onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center -mt-5">
+          <div class="w-14 h-14 rounded-full bg-primary-500 text-white flex items-center justify-center text-2xl shadow-lg shadow-primary-500/40 ring-4 ring-white dark:ring-slate-800">
             📋
           </div>
-          <span class="text-[10px] mt-1 font-semibold text-primary-500">Днес</span>
+          <span class="text-xs mt-1 font-semibold text-primary-500">Днес</span>
         </button>
-        <button onclick="switchTab('week')" data-tab="week" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <span class="text-xl">📊</span>
-          <span class="text-[10px] mt-0.5 font-medium">Преглед</span>
-        </button>
-        <button onclick="openAddMedModal()" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <span class="text-xl">➕</span>
-          <span class="text-[10px] mt-0.5 font-medium">Добави</span>
+        <button onclick="switchTab('settings')" data-tab="settings" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-2xl">⚙️</span>
+          <span class="text-xs mt-0.5 font-medium">Настройки</span>
         </button>
       </div>
     </nav>
@@ -540,6 +559,21 @@
               class="w-20 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
             <span class="text-sm text-slate-500">мин след вземане</span>
           </div>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600 space-y-2">
+          <label class="flex items-center gap-2 text-sm font-medium cursor-pointer">
+            <input type="checkbox" id="med-notify" class="rounded text-primary-500">
+            Напомни за това лекарство
+          </label>
+          <div class="flex items-center gap-2 text-sm">
+            <span class="text-slate-500">Колко преди:</span>
+            <select id="med-notify-before" class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none">
+              <option value="15">15 минути</option>
+              <option value="30">30 минути</option>
+            </select>
+          </div>
+          <p class="text-xs text-slate-400">Използва часовете от Настройки → Напомняния за сутрин/обяд/вечер</p>
         </div>
 
         <div>

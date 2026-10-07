@@ -493,6 +493,40 @@ function enterApp() {
   scheduleNotifications();
 }
 
+// ==================== APP MENU ====================
+function toggleAppMenu() {
+  var menu = document.getElementById('app-menu');
+  if (menu) menu.classList.toggle('hidden');
+}
+
+function menuGo(where) {
+  var menu = document.getElementById('app-menu');
+  if (menu) menu.classList.add('hidden');
+  if (where === 'profile') {
+    switchTab('settings');
+    var body = document.getElementById('profile-body');
+    if (body && body.classList.contains('hidden')) toggleProfileSection();
+    setTimeout(function () {
+      var el = document.getElementById('profile-body');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  } else if (where === 'meds') {
+    switchTab('meds');
+  } else if (where === 'settings') {
+    switchTab('settings');
+  } else if (where === 'logout') {
+    logout();
+  }
+}
+
+document.addEventListener('click', function (e) {
+  var menu = document.getElementById('app-menu');
+  if (!menu || menu.classList.contains('hidden')) return;
+  if (!e.target.closest || (!e.target.closest('#app-menu') && !e.target.closest('button[onclick*="toggleAppMenu"]'))) {
+    menu.classList.add('hidden');
+  }
+});
+
 // ==================== TABS ====================
 function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -513,13 +547,17 @@ function switchTab(tab) {
   }
 
   if (tab === 'today') renderToday();
-  if (tab === 'calendar') renderCalendar();
+  if (tab === 'calendar') {
+    renderCalendar();
+    renderWeekReview();
+  }
   if (tab === 'meds') renderMeds();
-  if (tab === 'week') renderWeekReview();
   if (tab === 'settings') {
     applyNotifToggle();
     loadNotifTimes();
   }
+  var menu = document.getElementById('app-menu');
+  if (menu) menu.classList.add('hidden');
 }
 
 // ==================== SCHEDULE LOGIC ====================
@@ -940,6 +978,7 @@ function renderMeds() {
               ${condition ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">${condition}</span>` : ''}
               ${remHtml}
               ${depHtml}
+              ${med.notify ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 text-xs">🔔 ' + (med.notifyBefore || 15) + ' мин</span>' : ''}
             </div>
             ${med.note ? `<p class="text-xs text-slate-400 mt-2">${med.note}</p>` : ''}
           </div>
@@ -966,6 +1005,10 @@ function openAddMedModal() {
   document.getElementById('med-duration').value = 'lifelong';
   document.getElementById('med-duration-value').value = '';
   document.getElementById('med-depends-min').value = '30';
+  var nEl = document.getElementById('med-notify');
+  if (nEl) nEl.checked = false;
+  var nbEl = document.getElementById('med-notify-before');
+  if (nbEl) nbEl.value = '15';
   document.querySelectorAll('.time-check').forEach(c => c.checked = false);
   document.querySelectorAll('.day-check').forEach(c => c.checked = false);
   fillDependsOnSelect(null);
@@ -992,6 +1035,10 @@ function editMed(id) {
   document.getElementById('med-duration').value = med.durationType || (med.endDate ? 'until' : 'lifelong');
   document.getElementById('med-duration-value').value = med.durationValue || '';
   document.getElementById('med-depends-min').value = med.dependsMin || 30;
+  var nEl2 = document.getElementById('med-notify');
+  if (nEl2) nEl2.checked = !!med.notify;
+  var nbEl2 = document.getElementById('med-notify-before');
+  if (nbEl2) nbEl2.value = String(med.notifyBefore || 15);
 
   document.querySelectorAll('.time-check').forEach(c => {
     c.checked = (med.times || []).includes(c.value);
@@ -1074,6 +1121,8 @@ function saveMed() {
 
   const dependsOn = document.getElementById('med-depends-on').value || null;
   const dependsMin = parseInt(document.getElementById('med-depends-min').value) || 30;
+  const notifyEl = document.getElementById('med-notify');
+  const notifyBeforeEl = document.getElementById('med-notify-before');
 
   const medData = {
     name,
@@ -1089,6 +1138,8 @@ function saveMed() {
     durationValue: durationValue || null,
     dependsOn,
     dependsMin: dependsOn ? dependsMin : null,
+    notify: notifyEl ? !!notifyEl.checked : false,
+    notifyBefore: notifyBeforeEl ? parseInt(notifyBeforeEl.value) || 15 : 15,
     note: document.getElementById('med-note').value.trim(),
     updatedAt: new Date().toISOString()
   };
@@ -1097,12 +1148,12 @@ function saveMed() {
     if (editingMedId) {
       db.collection('users').doc(currentUser.uid).collection('meds').doc(editingMedId)
         .update(medData)
-        .then(() => closeMedModal())
+        .then(() => { closeMedModal(); scheduleNotifications(); })
         .catch(err => alert('Грешка: ' + err.message));
     } else {
       medData.createdAt = new Date().toISOString();
       db.collection('users').doc(currentUser.uid).collection('meds').add(medData)
-        .then(() => closeMedModal())
+        .then(() => { closeMedModal(); scheduleNotifications(); })
         .catch(err => alert('Грешка: ' + err.message));
     }
   } else {
@@ -1121,6 +1172,7 @@ function saveMed() {
     renderMeds();
     renderToday();
     renderCalendar();
+    scheduleNotifications();
   }
 }
 
@@ -1408,42 +1460,53 @@ function scheduleNotifications() {
   if (localStorage.getItem('pillflow_notif') !== '1') return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
-  if (window._notifTimers) window._notifTimers.forEach(t => clearTimeout(t));
+  if (window._notifTimers) window._notifTimers.forEach(function (t) { clearTimeout(t); });
   window._notifTimers = [];
 
-  const times = JSON.parse(localStorage.getItem('pillflow_notif_times') || '{}');
-  const slots = {
+  var times = JSON.parse(localStorage.getItem('pillflow_notif_times') || '{}');
+  var slots = {
     morning: times.morning || '08:00',
     noon: times.noon || '13:00',
     evening: times.evening || '19:00',
     night: times.night || '22:00'
   };
 
-  const now = new Date();
-  Object.entries(slots).forEach(([slot, hhmm]) => {
-    const [h, m] = hhmm.split(':').map(Number);
-    const target = new Date();
-    target.setHours(h, m, 0, 0);
-    if (target <= now) target.setDate(target.getDate() + 1);
-    const delay = target - now;
-    const timer = setTimeout(() => {
-      const dayMeds = getMedsForDate(new Date());
-      const forSlot = dayMeds.filter(med => (med.times || []).includes(slot));
-      if (forSlot.length === 0) {
-        scheduleNotifications(); // reschedule next day
-        return;
-      }
-      const names = forSlot.map(m => m.name).join(', ');
-      new Notification('PillFlow – ' + TIME_LABELS[slot], {
-        body: `Време е: ${names}`,
-        icon: 'icon-192.png',
-        tag: 'pillflow-' + slot
-      });
-      scheduleNotifications();
-    }, delay);
-    window._notifTimers.push(timer);
+  var now = new Date();
+  var todayMeds = (typeof getMedsForDate === 'function') ? getMedsForDate(now) : (meds || []);
+
+  todayMeds.forEach(function (med) {
+    if (!med.notify) return;
+    var before = med.notifyBefore || 15;
+    (med.times || []).forEach(function (slot) {
+      var hhmm = slots[slot];
+      if (!hhmm) return;
+      var parts = hhmm.split(':').map(Number);
+      var target = new Date();
+      target.setHours(parts[0], parts[1], 0, 0);
+      target.setMinutes(target.getMinutes() - before);
+      if (target <= now) target.setDate(target.getDate() + 1);
+      var delay = target - now;
+      if (delay < 0 || delay > 48 * 3600 * 1000) return;
+      var timer = setTimeout(function () {
+        var d = new Date();
+        var dateStr = formatDate(d);
+        var dayLog = logs[dateStr] || {};
+        if (dayLog[med.id + '_' + slot]) {
+          scheduleNotifications();
+          return;
+        }
+        new Notification('PillFlow – ' + med.name, {
+          body: 'След ' + before + ' мин: ' + (TIME_LABELS[slot] || slot) + (med.dose ? ' · ' + med.dose : ''),
+          icon: 'icon-192.png',
+          tag: 'pillflow-' + med.id + '-' + slot
+        });
+        scheduleNotifications();
+      }, delay);
+      window._notifTimers.push(timer);
+    });
   });
 }
+
 
 // ==================== SETTINGS ====================
 function toggleDarkMode() {
