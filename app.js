@@ -410,6 +410,40 @@ function applyCalDotsToggle() {
   }
 }
 
+function isStockTrackingEnabled() {
+  // default ON if never set — user can turn off in settings
+  const v = localStorage.getItem('pillflow_stock');
+  return v !== '0';
+}
+
+function toggleStockTracking() {
+  localStorage.setItem('pillflow_stock', isStockTrackingEnabled() ? '0' : '1');
+  applyStockToggle();
+  renderToday();
+  renderMeds();
+}
+
+function applyStockToggle() {
+  const on = isStockTrackingEnabled();
+  const knob = document.getElementById('stock-knob');
+  const btn = document.getElementById('stock-toggle');
+  if (knob && btn) {
+    if (on) {
+      knob.style.transform = 'translateX(20px)';
+      btn.classList.add('bg-primary-500');
+      btn.classList.remove('bg-slate-200', 'dark:bg-slate-600');
+    } else {
+      knob.style.transform = 'translateX(0)';
+      btn.classList.remove('bg-primary-500');
+      btn.classList.add('bg-slate-200');
+    }
+  }
+  // Hide per-med stock UI in modal when global off
+  const box = document.getElementById('med-track-stock');
+  const stockWrap = box ? box.closest('.p-3') : null;
+  if (stockWrap) stockWrap.classList.toggle('hidden', !on);
+}
+
 function selectAvatar(emoji) {
   selectedAvatar = emoji;
   ['profile-avatar', 'profile-page-avatar'].forEach(function(id) {
@@ -529,6 +563,8 @@ function enterApp() {
   loadProfile();
   startListeners();
   scheduleNotifications();
+  applyStockToggle();
+  applyCalDotsToggle();
 }
 
 // ==================== APP MENU ====================
@@ -689,6 +725,7 @@ function switchTab(tab) {
     loadNotifTimes();
     applyTheme();
     applyCalDotsToggle();
+    applyStockToggle();
   }
   var menu = document.getElementById('app-menu');
   if (menu) menu.classList.add('hidden');
@@ -696,6 +733,9 @@ function switchTab(tab) {
 
 // ==================== SCHEDULE LOGIC ====================
 function shouldTakeOnDate(med, date) {
+  // Paused meds stay in list/history but not on schedule
+  if (med.active === false) return false;
+
   const dayOfWeek = date.getDay();
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -954,7 +994,7 @@ function renderToday() {
       }).join('')}
     </div>`;
   }
-  const lowStock = dayMeds.filter(m => m.stock != null && m.stock !== '' && Number(m.stock) <= (Number(m.stockLow) || 5));
+  const lowStock = (isStockTrackingEnabled() ? dayMeds.filter(m => m.stock != null && m.stock !== '' && Number(m.stock) <= (Number(m.stockLow) || 5)) : []);
   if (lowStock.length > 0) {
     html += `<div class="mb-3 p-3 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-200">
       ${lowStock.map(m => `<div>🛒 <b>${m.name}</b> — остават ${m.stock} бр. (време за нова опаковка)</div>`).join('')}
@@ -1017,7 +1057,7 @@ function renderToday() {
               ${med.dose ? `<span>${med.dose}</span>` : ''}
               ${med.form ? `<span>· ${med.form}</span>` : ''}
               ${condition ? `<span class="text-amber-500 dark:text-amber-400">· ${condition}</span>` : ''}
-              ${(med.stock != null && med.stock !== '') ? `<span class="${(Number(med.stockLow)||5) >= Number(med.stock) ? 'text-red-500 font-medium' : ''}">· ${med.stock} бр.</span>` : ''}
+              ${(isStockTrackingEnabled() && med.stock != null && med.stock !== '') ? `<span class="${Number(med.stock) <= (Number(med.stockLow)||5) ? 'text-red-500 font-medium' : ''}">· ${med.stock} бр.</span>` : ''}
             </p>
             ${locked ? `<p class="text-xs text-violet-500 mt-1">🔒 ${lockMsg}</p>` : ''}
             ${!locked && med.dependsOn && !isTaken ? `<p class="text-xs text-violet-400 mt-1">${lockMsg}</p>` : ''}
@@ -1055,6 +1095,7 @@ function showCompleteToast() {
 }
 
 function adjustStock(medId, delta) {
+  if (!isStockTrackingEnabled()) return;
   const med = meds.find(m => m.id === medId);
   if (!med || med.stock == null || med.stock === '') return;
   const next = Math.max(0, Number(med.stock) + delta);
@@ -1200,8 +1241,14 @@ function renderMeds() {
       ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs">${med.dependsMin || 30} мин след ${depMed.name}</span>`
       : '';
 
+    const paused = med.active === false;
+    const stockOn = typeof isStockTrackingEnabled === 'function' && isStockTrackingEnabled();
+    const stockHtml = (stockOn && med.stock != null && med.stock !== '')
+      ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md ' + (Number(med.stock) <= (Number(med.stockLow)||5) ? 'bg-red-50 text-red-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300') + ' text-xs">' + med.stock + ' бр.</span>'
+      : '';
+
     return `
-      <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+      <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 ${paused ? 'opacity-70' : ''}">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <p class="font-semibold text-lg">${med.name}</p>
@@ -1209,17 +1256,19 @@ function renderMeds() {
               ${med.dose || ''} ${med.form ? '· ' + med.form : ''}
             </p>
             <div class="flex flex-wrap gap-1.5 mt-2">
+              ${paused ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium">⏸ На пауза</span>' : '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 text-xs font-medium">▶ Активен</span>'}
               <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-medium">${times}</span>
               <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs">${freqMap[med.frequency] || 'Всеки ден'}</span>
               ${condition ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">${condition}</span>` : ''}
               ${remHtml}
               ${depHtml}
               ${med.notify ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 text-xs">🔔 ' + (med.notifyBefore || 15) + ' мин</span>' : ''}
-              ${(med.stock != null && med.stock !== '') ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md ' + (Number(med.stock) <= (Number(med.stockLow)||5) ? 'bg-red-50 text-red-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300') + ' text-xs">' + med.stock + ' бр.</span>' : ''}
+              ${stockHtml}
             </div>
             ${med.note ? `<p class="text-xs text-slate-400 mt-2">${med.note}</p>` : ''}
           </div>
-          <div class="flex gap-1">
+          <div class="flex flex-col gap-1">
+            <button onclick="toggleMedActive('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-500 text-sm" title="${paused ? 'Активирай' : 'Пауза'}">${paused ? '▶' : '⏸'}</button>
             <button onclick="editMed('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-500" title="Редактирай">✏️</button>
             <button onclick="deleteMed('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-red-500" title="Изтрий">🗑️</button>
           </div>
@@ -1228,6 +1277,36 @@ function renderMeds() {
   }).join('');
 }
 
+
+
+function toggleMedActive(id) {
+  const med = meds.find(m => m.id === id);
+  if (!med) return;
+  const next = med.active === false; // if paused -> activate true
+  const active = next ? true : false;
+  // if currently active (undefined or true), pause
+  const newActive = (med.active === false) ? true : false;
+
+  med.active = newActive;
+  if (newActive) {
+    med.pausedAt = null;
+    med.resumedAt = new Date().toISOString();
+  } else {
+    med.pausedAt = new Date().toISOString();
+  }
+
+  if (firebaseReady) {
+    db.collection('users').doc(currentUser.uid).collection('meds').doc(id)
+      .update({ active: newActive, pausedAt: med.pausedAt || null, resumedAt: med.resumedAt || null })
+      .then(() => { renderMeds(); renderToday(); renderCalendar(); })
+      .catch(err => alert('Грешка: ' + err.message));
+  } else {
+    saveLocalData(currentUser.uid, { meds, logs });
+    renderMeds();
+    renderToday();
+    renderCalendar();
+  }
+}
 
 function toggleStockFields() {
   var on = document.getElementById('med-track-stock');
@@ -1243,6 +1322,10 @@ function toggleStockFields() {
 function openAddMedModal() {
   editingMedId = null;
   document.getElementById('modal-title').textContent = 'Нов медикамент';
+  var pauseBox = document.getElementById('med-pause-box');
+  if (pauseBox) pauseBox.classList.add('hidden');
+  var act = document.getElementById('med-active');
+  if (act) act.checked = true;
   document.getElementById('med-name').value = '';
   document.getElementById('med-dose').value = '';
   document.getElementById('med-form').value = 'Таблетка';
@@ -1251,6 +1334,7 @@ function openAddMedModal() {
   var ms = document.getElementById('med-stock'); if (ms) ms.value = '';
   var msl = document.getElementById('med-stock-low'); if (msl) msl.value = '5';
   toggleStockFields();
+  applyStockToggle();
   document.getElementById('med-condition').value = 'any';
   document.getElementById('med-frequency').value = 'daily';
   document.getElementById('med-note').value = '';
@@ -1278,6 +1362,10 @@ function editMed(id) {
 
   editingMedId = id;
   document.getElementById('modal-title').textContent = 'Редактирай медикамент';
+  var pauseBox = document.getElementById('med-pause-box');
+  if (pauseBox) pauseBox.classList.remove('hidden');
+  var act = document.getElementById('med-active');
+  if (act) act.checked = med.active !== false;
   document.getElementById('med-name').value = med.name;
   document.getElementById('med-dose').value = med.dose || '';
   document.getElementById('med-form').value = med.form || 'Таблетка';
@@ -1417,9 +1505,16 @@ function saveMed() {
     dependsMin: dependsOn ? dependsMin : null,
     notify: notifyEl ? !!notifyEl.checked : false,
     notifyBefore: notifyBeforeEl ? parseInt(notifyBeforeEl.value) || 15 : 15,
+    active: (function(){
+      if (!editingMedId) return true;
+      var a = document.getElementById('med-active');
+      return a ? !!a.checked : true;
+    })(),
     note: document.getElementById('med-note').value.trim(),
     updatedAt: new Date().toISOString()
   };
+  if (medData.active === false) medData.pausedAt = new Date().toISOString();
+  if (medData.active === true && editingMedId) medData.resumedAt = new Date().toISOString();
 
   if (firebaseReady) {
     if (editingMedId) {

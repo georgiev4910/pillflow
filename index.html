@@ -432,6 +432,15 @@
               <span id="cal-dots-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
             </button>
           </div>
+          <div class="p-4 flex items-center justify-between">
+            <div>
+              <p class="font-medium">Следене на наличност</p>
+              <p class="text-xs text-slate-400">Брой таблетки и напомняне за купуване</p>
+            </div>
+            <button id="stock-toggle" onclick="toggleStockTracking()" class="relative w-12 h-7 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+              <span id="stock-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
         </div>
 
         <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-3">
@@ -679,6 +688,16 @@
             </select>
           </div>
           <p class="text-xs text-slate-400">Използва часовете от Настройки → Напомняния за сутрин/обяд/вечер</p>
+        </div>
+
+        <div id="med-pause-box" class="hidden p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600">
+          <label class="flex items-center justify-between cursor-pointer">
+            <div>
+              <p class="text-sm font-medium">Активен прием</p>
+              <p class="text-xs text-slate-400">Изключи, за да спреш временно — историята се пази</p>
+            </div>
+            <input type="checkbox" id="med-active" checked class="rounded text-primary-500 w-5 h-5">
+          </label>
         </div>
 
         <div>
