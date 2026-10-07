@@ -546,24 +546,7 @@ function closeProfileEditModal() {
 }
 
 function updateHeaderForTab(tab) {
-  var icons = {
-    today: '📋',
-    calendar: '📅',
-    meds: '💊',
-    profile: '👤',
-    settings: '⚙️'
-  };
-  var titles = {
-    today: 'Днес',
-    calendar: 'Календар',
-    meds: 'Лекарства',
-    profile: 'Профил',
-    settings: 'Настройки'
-  };
-  var iconEl = document.getElementById('header-icon');
-  var subEl = document.getElementById('header-subtitle');
-  if (iconEl) iconEl.textContent = icons[tab] || '💊';
-  if (subEl) subEl.textContent = titles[tab] || 'PillFlow';
+  // Header stays brand-only: PillFlow + app icon
 }
 
 function renderProfilePage() {
@@ -834,17 +817,45 @@ function renderToday() {
     });
   });
 
-  // Subtitle under greeting
+  // Subtitle + progress bar + motivation
   const subtitle = document.getElementById('today-subtitle');
+  const bar = document.getElementById('progress-bar');
+  const mot = document.getElementById('motivation-text');
+  const motChip = document.getElementById('motivation-chip');
+  const pctBar = total === 0 ? 0 : Math.round((taken / total) * 100);
+  if (bar) bar.style.width = pctBar + '%';
+
   if (subtitle) {
     if (!isToday) {
       subtitle.textContent = formatDisplayDate(currentDate);
     } else if (total === 0) {
-      subtitle.textContent = 'Няма хапчета за днес';
+      subtitle.textContent = 'Добави медикамент, за да започнеш';
     } else if (taken === total) {
-      subtitle.textContent = 'Всичко е взето ✓';
+      subtitle.textContent = 'Всичко е взето — страхотен ден';
+    } else if (taken === 0) {
+      subtitle.textContent = total + ' предстоят · още нищо не е отбелязано';
     } else {
-      subtitle.textContent = `${taken} от ${total} взети`;
+      subtitle.textContent = taken + ' от ' + total + ' взети · остават ' + (total - taken);
+    }
+  }
+
+  if (mot && motChip) {
+    if (!isToday) {
+      motChip.classList.add('hidden');
+    } else if (total === 0) {
+      motChip.classList.remove('hidden');
+      mot.textContent = 'Готов за нов старт';
+    } else if (taken === total) {
+      motChip.classList.add('hidden'); // complete badge shows instead
+    } else if (taken === 0) {
+      motChip.classList.remove('hidden');
+      mot.textContent = 'Първата стъпка е най-важната';
+    } else if (pctBar >= 70) {
+      motChip.classList.remove('hidden');
+      mot.textContent = (profile.gender === 'm') ? 'Почти си готов' : 'Почти си готова';
+    } else {
+      motChip.classList.remove('hidden');
+      mot.textContent = 'Продължаваш добре';
     }
   }
 
