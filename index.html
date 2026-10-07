@@ -317,6 +317,18 @@
           <p class="text-xs text-slate-400 mb-3">Последните 7 дни</p>
           <div id="week-review" class="space-y-2 text-sm"></div>
         </div>
+
+        <div class="mt-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="font-bold">Тенденции</h3>
+              <p class="text-xs text-slate-400">% изпълнение по дни</p>
+            </div>
+            <button onclick="generateDoctorReport()" class="text-xs font-semibold text-primary-500 hover:underline">📄 Справка PDF</button>
+          </div>
+          <div id="trends-chart" class="flex items-end justify-between gap-1.5 h-28"></div>
+          <div id="trends-labels" class="flex justify-between gap-1.5 mt-1.5"></div>
+        </div>
       </div>
 
       <!-- TAB: МОИТЕ МЕДИКАМЕНТИ -->
@@ -581,10 +593,24 @@
               <option>Капсула</option>
               <option>Течност</option>
               <option>Прах</option>
+              <option>Впръскване</option>
               <option>Друго</option>
             </select>
           </div>
         </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Наличност (бр.)</label>
+            <input type="number" id="med-stock" min="0" placeholder="напр. 30"
+              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Напомни под (бр.)</label>
+            <input type="number" id="med-stock-low" min="0" placeholder="напр. 5"
+              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+          </div>
+        </div>
+        <p class="text-xs text-slate-400 -mt-2">При всяко отбелязване наличността намалява с 1</p>
 
         <div>
           <label class="block text-sm font-medium mb-1.5">Време на деня *</label>

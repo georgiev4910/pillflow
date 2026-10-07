@@ -57,7 +57,24 @@ const CONDITION_LABELS = {
 
 // ==================== HELPERS ====================
 function formatDate(d) {
-  return d.toISOString().slice(0, 10);
+  // Local timezone date key — avoids UTC shift near midnight
+  const x = (d instanceof Date) ? d : new Date(d);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, '0');
+  const day = String(x.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function localDateInputValue(d) {
+  return formatDate(d || new Date());
+}
+
+function parseLocalDate(str) {
+  // Parse YYYY-MM-DD as local midnight (not UTC)
+  if (!str) return null;
+  const p = String(str).split('-').map(Number);
+  if (p.length < 3) return null;
+  return new Date(p[0], p[1] - 1, p[2]);
 }
 
 function formatDisplayDate(d) {
@@ -662,6 +679,7 @@ function switchTab(tab) {
   if (tab === 'calendar') {
     renderCalendar();
     renderWeekReview();
+    renderTrendsChart();
   }
   if (tab === 'meds') renderMeds();
   if (tab === 'profile') renderProfilePage();
@@ -681,16 +699,18 @@ function shouldTakeOnDate(med, date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
 
-  // Duration check (start / end)
-  const start = med.startDate ? new Date(med.startDate) : null;
+  // Duration check (start / end) — local dates
+  const start = med.startDate ? parseLocalDate(med.startDate) : null;
   if (start) {
     start.setHours(0, 0, 0, 0);
     if (d < start) return false;
   }
   if (med.endDate) {
-    const end = new Date(med.endDate);
-    end.setHours(0, 0, 0, 0);
-    if (d > end) return false;
+    const end = parseLocalDate(med.endDate);
+    if (end) {
+      end.setHours(0, 0, 0, 0);
+      if (d > end) return false;
+    }
   }
 
   // Frequency
@@ -928,6 +948,12 @@ function renderToday() {
       }).join('')}
     </div>`;
   }
+  const lowStock = dayMeds.filter(m => m.stock != null && m.stock !== '' && Number(m.stock) <= (Number(m.stockLow) || 5));
+  if (lowStock.length > 0) {
+    html += `<div class="mb-3 p-3 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-200">
+      ${lowStock.map(m => `<div>🛒 <b>${m.name}</b> — остават ${m.stock} бр. (време за нова опаковка)</div>`).join('')}
+    </div>`;
+  }
 
   ['morning', 'noon', 'evening', 'night'].forEach(timeKey => {
     const items = sections[timeKey];
@@ -935,12 +961,16 @@ function renderToday() {
 
     const sectionTaken = items.filter(({ med, time }) => dayLog[`${med.id}_${time}`]).length;
 
+    const allDone = sectionTaken === items.length && items.length > 0;
     html += `<div>
-      <div class="flex items-center justify-between mb-2.5">
+      <div class="flex items-center justify-between mb-2.5 gap-2">
         <h3 class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase section-label flex items-center gap-1.5">
           <span>${sectionIcons[timeKey]}</span> ${TIME_LABELS[timeKey]}
         </h3>
-        <span class="text-xs text-slate-400">${sectionTaken}/${items.length}</span>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">${sectionTaken}/${items.length}</span>
+          ${(!allDone && isSameDay(currentDate, new Date())) ? `<button onclick="takeAllForSlot('${timeKey}')" class="text-[11px] font-semibold text-primary-500 bg-primary-50 dark:bg-primary-900/30 px-2.5 py-1 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/50 transition">Всички ✓</button>` : ''}
+        </div>
       </div>
       <div class="space-y-2.5">`;
 
@@ -981,6 +1011,7 @@ function renderToday() {
               ${med.dose ? `<span>${med.dose}</span>` : ''}
               ${med.form ? `<span>· ${med.form}</span>` : ''}
               ${condition ? `<span class="text-amber-500 dark:text-amber-400">· ${condition}</span>` : ''}
+              ${(med.stock != null && med.stock !== '') ? `<span class="${(Number(med.stockLow)||5) >= Number(med.stock) ? 'text-red-500 font-medium' : ''}">· ${med.stock} бр.</span>` : ''}
             </p>
             ${locked ? `<p class="text-xs text-violet-500 mt-1">🔒 ${lockMsg}</p>` : ''}
             ${!locked && med.dependsOn && !isTaken ? `<p class="text-xs text-violet-400 mt-1">${lockMsg}</p>` : ''}
@@ -1017,11 +1048,26 @@ function showCompleteToast() {
   setTimeout(() => toast.classList.add('hidden'), 2500);
 }
 
-function toggleTaken(medId, time) {
+function adjustStock(medId, delta) {
+  const med = meds.find(m => m.id === medId);
+  if (!med || med.stock == null || med.stock === '') return;
+  const next = Math.max(0, Number(med.stock) + delta);
+  med.stock = next;
+  if (firebaseReady) {
+    db.collection('users').doc(currentUser.uid).collection('meds').doc(medId)
+      .update({ stock: next }).catch(err => console.warn('stock update', err));
+  } else {
+    saveLocalData(currentUser.uid, { meds, logs });
+  }
+}
+
+function toggleTaken(medId, time, opts) {
+  opts = opts || {};
   const dateStr = formatDate(currentDate);
   const key = `${medId}_${time}`;
   const current = !!(logs[dateStr] && logs[dateStr][key]);
   const wasComplete = isDayComplete(currentDate);
+  const marking = !current;
 
   if (firebaseReady) {
     const ref = db.collection('users').doc(currentUser.uid).collection('logs').doc(dateStr);
@@ -1029,36 +1075,76 @@ function toggleTaken(medId, time) {
       ref.update({ [key]: firebase.firestore.FieldValue.delete() }).catch(() => {
         ref.set({}, { merge: true });
       });
+      if (!opts.skipStock) adjustStock(medId, +1);
     } else {
       ref.set({ [key]: true }, { merge: true });
+      if (!opts.skipStock) adjustStock(medId, -1);
     }
-    // Check completion after short delay (wait for snapshot)
-    setTimeout(() => {
-      if (!wasComplete && isDayComplete(currentDate)) {
-        showCompleteToast();
-      }
-    }, 400);
+    if (!opts.silent) {
+      setTimeout(() => {
+        if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
+        renderToday();
+        renderCalendar();
+      }, 350);
+    }
   } else {
     if (!logs[dateStr]) logs[dateStr] = {};
-    if (current) delete logs[dateStr][key];
-    else logs[dateStr][key] = true;
+    if (current) {
+      delete logs[dateStr][key];
+      if (!opts.skipStock) adjustStock(medId, +1);
+    } else {
+      logs[dateStr][key] = true;
+      if (!opts.skipStock) adjustStock(medId, -1);
+    }
     saveLocalData(currentUser.uid, { meds, logs });
-    renderToday();
-    renderCalendar();
-    if (!wasComplete && isDayComplete(currentDate)) {
-      showCompleteToast();
+    if (!opts.silent) {
+      renderToday();
+      renderCalendar();
+      if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
     }
   }
+}
+
+function takeAllForSlot(timeKey) {
+  const dayMeds = getMedsForDate(currentDate);
+  const dateStr = formatDate(currentDate);
+  const dayLog = logs[dateStr] || {};
+  const wasComplete = isDayComplete(currentDate);
+  let count = 0;
+
+  dayMeds.forEach(med => {
+    if (!(med.times || []).includes(timeKey)) return;
+    const key = med.id + '_' + timeKey;
+    if (dayLog[key]) return;
+    // skip locked by dependency
+    if (med.dependsOn) {
+      const depMed = meds.find(m => m.id === med.dependsOn);
+      let anyDep = false;
+      if (depMed) {
+        (depMed.times || []).forEach(t => { if (dayLog[depMed.id + '_' + t]) anyDep = true; });
+      }
+      if (!anyDep) return;
+    }
+    toggleTaken(med.id, timeKey, { silent: true });
+    count++;
+  });
+
+  setTimeout(() => {
+    renderToday();
+    renderCalendar();
+    if (count > 0 && !wasComplete && isDayComplete(currentDate)) showCompleteToast();
+  }, 400);
 }
 
 // ==================== MEDS CRUD ====================
 function daysRemaining(med) {
   if (!med.endDate) return null;
-  const end = new Date(med.endDate);
+  const end = parseLocalDate(med.endDate);
+  if (!end) return null;
   end.setHours(0, 0, 0, 0);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diff = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+  const diff = Math.round((end - today) / (1000 * 60 * 60 * 24));
   return diff;
 }
 
@@ -1122,6 +1208,7 @@ function renderMeds() {
               ${remHtml}
               ${depHtml}
               ${med.notify ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 text-xs">🔔 ' + (med.notifyBefore || 15) + ' мин</span>' : ''}
+              ${(med.stock != null && med.stock !== '') ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md ' + (Number(med.stock) <= (Number(med.stockLow)||5) ? 'bg-red-50 text-red-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300') + ' text-xs">' + med.stock + ' бр.</span>' : ''}
             </div>
             ${med.note ? `<p class="text-xs text-slate-400 mt-2">${med.note}</p>` : ''}
           </div>
@@ -1140,10 +1227,12 @@ function openAddMedModal() {
   document.getElementById('med-name').value = '';
   document.getElementById('med-dose').value = '';
   document.getElementById('med-form').value = 'Таблетка';
+  var ms = document.getElementById('med-stock'); if (ms) ms.value = '';
+  var msl = document.getElementById('med-stock-low'); if (msl) msl.value = '5';
   document.getElementById('med-condition').value = 'any';
   document.getElementById('med-frequency').value = 'daily';
   document.getElementById('med-note').value = '';
-  document.getElementById('med-start').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('med-start').value = localDateInputValue(new Date());
   document.getElementById('med-end').value = '';
   document.getElementById('med-duration').value = 'lifelong';
   document.getElementById('med-duration-value').value = '';
@@ -1170,6 +1259,8 @@ function editMed(id) {
   document.getElementById('med-name').value = med.name;
   document.getElementById('med-dose').value = med.dose || '';
   document.getElementById('med-form').value = med.form || 'Таблетка';
+  var ms2 = document.getElementById('med-stock'); if (ms2) ms2.value = (med.stock != null && med.stock !== '') ? med.stock : '';
+  var msl2 = document.getElementById('med-stock-low'); if (msl2) msl2.value = (med.stockLow != null) ? med.stockLow : 5;
   document.getElementById('med-condition').value = med.condition || 'any';
   document.getElementById('med-frequency').value = med.frequency || 'daily';
   document.getElementById('med-note').value = med.note || '';
@@ -1241,24 +1332,24 @@ function saveMed() {
   const durationValue = parseInt(document.getElementById('med-duration-value').value) || 0;
 
   if (!startDate) {
-    startDate = new Date().toISOString().slice(0, 10); // today by default
+    startDate = localDateInputValue(new Date()); // today by default (local)
   }
 
   if (durationType === 'until') {
     endDate = document.getElementById('med-end').value || null;
   } else if (durationType === 'days' && durationValue > 0) {
-    const s = new Date(startDate);
+    const s = parseLocalDate(startDate) || new Date();
     s.setDate(s.getDate() + durationValue - 1);
-    endDate = s.toISOString().slice(0, 10);
+    endDate = formatDate(s);
   } else if (durationType === 'weeks' && durationValue > 0) {
-    const s = new Date(startDate);
+    const s = parseLocalDate(startDate) || new Date();
     s.setDate(s.getDate() + (durationValue * 7) - 1);
-    endDate = s.toISOString().slice(0, 10);
+    endDate = formatDate(s);
   } else if (durationType === 'months' && durationValue > 0) {
-    const s = new Date(startDate);
+    const s = parseLocalDate(startDate) || new Date();
     s.setMonth(s.getMonth() + durationValue);
     s.setDate(s.getDate() - 1);
-    endDate = s.toISOString().slice(0, 10);
+    endDate = formatDate(s);
   }
   // lifelong → endDate stays null
 
@@ -1271,6 +1362,8 @@ function saveMed() {
     name,
     dose: document.getElementById('med-dose').value.trim(),
     form: document.getElementById('med-form').value,
+    stock: (function(){ var v = document.getElementById('med-stock'); if(!v||v.value==='') return null; return parseInt(v.value,10); })(),
+    stockLow: (function(){ var v = document.getElementById('med-stock-low'); if(!v||v.value==='') return 5; return parseInt(v.value,10); })(),
     times,
     condition: document.getElementById('med-condition').value,
     frequency,
@@ -1599,6 +1692,46 @@ async function toggleNotifications() {
   applyNotifToggle();
 }
 
+
+function showPillNotification(title, body, tag) {
+  var opts = {
+    body: body,
+    icon: 'icon-192.png',
+    tag: tag || 'pillflow',
+    requireInteraction: true,
+    data: { title: title, body: body, tag: tag },
+    actions: [
+      { action: 'snooze10', title: 'Снууз 10 мин' },
+      { action: 'snooze30', title: 'Снууз 30 мин' }
+    ]
+  };
+  if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready.then(function (reg) {
+      // actions only work with service worker notifications
+      return reg.showNotification(title, opts);
+    }).catch(function () {
+      new Notification(title, { body: body, icon: 'icon-192.png', tag: tag });
+    });
+  } else {
+    try { new Notification(title, { body: body, icon: 'icon-192.png', tag: tag }); } catch (e) {}
+  }
+}
+
+function scheduleSnooze(mins, title, body, tag) {
+  setTimeout(function () {
+    showPillNotification(title || 'PillFlow', body || 'Напомняне за хапче', tag || 'pillflow-snooze');
+  }, mins * 60 * 1000);
+}
+
+if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener('message', function (event) {
+    var d = event.data || {};
+    if (d.type === 'PILLFLOW_SNOOZE') {
+      scheduleSnooze(d.mins || 10, d.title, d.body, d.tag);
+    }
+  });
+}
+
 function scheduleNotifications() {
   if (localStorage.getItem('pillflow_notif') !== '1') return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -1638,11 +1771,10 @@ function scheduleNotifications() {
           scheduleNotifications();
           return;
         }
-        new Notification('PillFlow – ' + med.name, {
-          body: 'След ' + before + ' мин: ' + (TIME_LABELS[slot] || slot) + (med.dose ? ' · ' + med.dose : ''),
-          icon: 'icon-192.png',
-          tag: 'pillflow-' + med.id + '-' + slot
-        });
+        var title = 'PillFlow – ' + med.name;
+        var body = 'След ' + before + ' мин: ' + (TIME_LABELS[slot] || slot) + (med.dose ? ' · ' + med.dose : '');
+        var tag = 'pillflow-' + med.id + '-' + slot;
+        showPillNotification(title, body, tag);
         scheduleNotifications();
       }, delay);
       window._notifTimers.push(timer);
@@ -1692,6 +1824,122 @@ function clearAllData() {
     renderCalendar();
     alert('Данните са изтрити');
   }
+}
+
+
+
+// ==================== TRENDS + DOCTOR REPORT ====================
+function renderTrendsChart() {
+  const chart = document.getElementById('trends-chart');
+  const labels = document.getElementById('trends-labels');
+  if (!chart) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let bars = '';
+  let labs = '';
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dayMeds = getMedsForDate(d);
+    const dayLog = logs[formatDate(d)] || {};
+    let total = 0, taken = 0;
+    dayMeds.forEach(med => {
+      (med.times || []).forEach(t => {
+        total++;
+        if (dayLog[med.id + '_' + t]) taken++;
+      });
+    });
+    const pct = total === 0 ? 0 : Math.round((taken / total) * 100);
+    const h = total === 0 ? 8 : Math.max(8, Math.round((pct / 100) * 100));
+    let color = 'bg-slate-200 dark:bg-slate-600';
+    if (total > 0) {
+      if (pct === 100) color = 'bg-emerald-500';
+      else if (pct >= 50) color = 'bg-amber-400';
+      else color = 'bg-red-400';
+    }
+    const label = d.toLocaleDateString('bg-BG', { weekday: 'narrow' });
+    bars += `<div class="flex-1 flex flex-col items-center justify-end h-full">
+      <span class="text-[9px] text-slate-400 mb-0.5">${total ? pct + '%' : '—'}</span>
+      <div class="w-full ${color} rounded-t-md transition-all" style="height:${h}%"></div>
+    </div>`;
+    labs += `<div class="flex-1 text-center text-[10px] text-slate-400">${label}</div>`;
+  }
+  chart.innerHTML = bars;
+  if (labels) labels.innerHTML = labs;
+}
+
+function generateDoctorReport() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const name = (profile && profile.name) || (currentUser && currentUser.displayName) || 'Пациент';
+  const days = [];
+  let totalDoses = 0, takenDoses = 0;
+
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dayMeds = getMedsForDate(d);
+    const dayLog = logs[formatDate(d)] || {};
+    let t = 0, tk = 0;
+    const lines = [];
+    dayMeds.forEach(med => {
+      (med.times || []).forEach(slot => {
+        t++;
+        const ok = !!dayLog[med.id + '_' + slot];
+        if (ok) tk++;
+        lines.push({ med: med.name, slot: TIME_LABELS[slot] || slot, ok: ok, dose: med.dose || '' });
+      });
+    });
+    totalDoses += t;
+    takenDoses += tk;
+    days.push({ date: formatDate(d), display: d.toLocaleDateString('bg-BG'), total: t, taken: tk, lines: lines });
+  }
+
+  const pct = totalDoses ? Math.round((takenDoses / totalDoses) * 100) : 0;
+  const medsList = meds.map(m => {
+    const stock = (m.stock != null && m.stock !== '') ? m.stock + ' бр.' : '—';
+    return `<tr><td>${m.name}</td><td>${m.dose || '—'}</td><td>${(m.times||[]).map(t=>TIME_LABELS[t]).join(', ')}</td><td>${stock}</td></tr>`;
+  }).join('');
+
+  const dayRows = days.filter(d => d.total > 0).map(d => {
+    const status = d.taken === d.total ? '✓' : (d.taken === 0 ? '✗' : d.taken + '/' + d.total);
+    return `<tr><td>${d.display}</td><td>${status}</td><td>${d.total ? Math.round(d.taken/d.total*100) : 0}%</td></tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="bg"><head><meta charset="UTF-8"><title>PillFlow справка – ${name}</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#0f172a}
+    h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:24px 0 8px;color:#0369a1}
+    .meta{color:#64748b;font-size:13px;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px}
+    th,td{border:1px solid #e2e8f0;padding:8px;text-align:left}
+    th{background:#f8fafc}
+    .summary{display:flex;gap:12px;margin:16px 0}
+    .card{flex:1;border:1px solid #e2e8f0;border-radius:12px;padding:12px;text-align:center}
+    .card b{display:block;font-size:22px;color:#0284c7}
+    @media print{button{display:none}}
+  </style></head><body>
+  <button onclick="window.print()" style="padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:16px">Печат / Запази PDF</button>
+  <h1>Справка за прием на медикаменти</h1>
+  <p class="meta">Пациент: <b>${name}</b> · Период: последните 30 дни · Генерирано: ${today.toLocaleDateString('bg-BG')} · PillFlow</p>
+  <div class="summary">
+    <div class="card"><b>${pct}%</b>спазване</div>
+    <div class="card"><b>${takenDoses}</b>взети дози</div>
+    <div class="card"><b>${totalDoses - takenDoses}</b>пропуски</div>
+  </div>
+  <h2>Медикаменти</h2>
+  <table><thead><tr><th>Име</th><th>Доза</th><th>Време</th><th>Наличност</th></tr></thead><tbody>${medsList || '<tr><td colspan=4>Няма</td></tr>'}</tbody></table>
+  <h2>Дневен преглед (30 дни)</h2>
+  <table><thead><tr><th>Дата</th><th>Статус</th><th>%</th></tr></thead><tbody>${dayRows || '<tr><td colspan=3>Няма данни</td></tr>'}</tbody></table>
+  <p class="meta">Тази справка е генерирана от PillFlow и е информативна. Не замества медицинска документация.</p>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { alert('Разреши pop-up за справката'); return; }
+  w.document.write(html);
+  w.document.close();
 }
 
 // ==================== INIT ====================
