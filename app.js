@@ -733,8 +733,8 @@ function switchTab(tab) {
 
 // ==================== SCHEDULE LOGIC ====================
 function shouldTakeOnDate(med, date) {
-  // Paused meds stay in list/history but not on schedule
-  if (med.active === false) return false;
+  // Paused or archived — keep history, not on schedule
+  if (med.active === false || med.archived === true) return false;
 
   const dayOfWeek = date.getDay();
   const d = new Date(date);
@@ -1202,9 +1202,10 @@ function fillDependsOnSelect(excludeId) {
   sel.innerHTML = '<option value="">Няма</option>';
   meds.forEach(m => {
     if (m.id === excludeId) return;
+    if (m.archived === true) return;
     const opt = document.createElement('option');
     opt.value = m.id;
-    opt.textContent = m.name;
+    opt.textContent = m.name + (m.active === false ? ' (пауза)' : '');
     sel.appendChild(opt);
   });
 }
@@ -1212,15 +1213,42 @@ function fillDependsOnSelect(excludeId) {
 function renderMeds() {
   const list = document.getElementById('meds-list');
   const empty = document.getElementById('meds-empty');
+  if (!list) return;
 
-  if (meds.length === 0) {
+  const sub = window._medsSubTab || 'active';
+  const activeBtn = document.getElementById('meds-sub-active');
+  const archiveBtn = document.getElementById('meds-sub-archive');
+  if (activeBtn && archiveBtn) {
+    if (sub === 'active') {
+      activeBtn.className = 'flex-1 py-2 rounded-lg text-sm font-semibold bg-white dark:bg-slate-700 shadow-sm text-primary-600';
+      archiveBtn.className = 'flex-1 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300';
+    } else {
+      archiveBtn.className = 'flex-1 py-2 rounded-lg text-sm font-semibold bg-white dark:bg-slate-700 shadow-sm text-primary-600';
+      activeBtn.className = 'flex-1 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300';
+    }
+  }
+
+  const filtered = meds.filter(m => sub === 'archive' ? m.archived === true : m.archived !== true);
+
+  if (filtered.length === 0) {
     list.innerHTML = '';
-    empty.classList.remove('hidden');
+    if (empty) {
+      empty.classList.remove('hidden');
+      const t = document.getElementById('meds-empty-text');
+      const b = document.getElementById('meds-empty-btn');
+      if (sub === 'archive') {
+        if (t) t.textContent = 'Архивът е празен';
+        if (b) b.classList.add('hidden');
+      } else {
+        if (t) t.textContent = 'Все още нямаш добавени медикаменти';
+        if (b) { b.classList.remove('hidden'); b.textContent = 'Добави първия'; }
+      }
+    }
     return;
   }
-  empty.classList.add('hidden');
+  if (empty) empty.classList.add('hidden');
 
-  list.innerHTML = meds.map(med => {
+  list.innerHTML = filtered.map(med => {
     const times = (med.times || []).map(t => TIME_LABELS[t]).join(', ');
     const freqMap = {
       daily: 'Всеки ден',
@@ -1230,7 +1258,7 @@ function renderMeds() {
     const condition = CONDITION_LABELS[med.condition] || '';
     const rem = daysRemaining(med);
     let remHtml = '';
-    if (rem !== null) {
+    if (rem !== null && med.archived !== true) {
       if (rem < 0) remHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-500 text-xs">Курсът приключи</span>`;
       else if (rem === 0) remHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-900/30 text-red-600 text-xs font-medium">Последен ден</span>`;
       else if (rem <= 3) remHtml = `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-700 text-xs font-medium">Остават ${rem} дни</span>`;
@@ -1241,14 +1269,33 @@ function renderMeds() {
       ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs">${med.dependsMin || 30} мин след ${depMed.name}</span>`
       : '';
 
-    const paused = med.active === false;
+    const paused = med.active === false && med.archived !== true;
+    const archived = med.archived === true;
     const stockOn = typeof isStockTrackingEnabled === 'function' && isStockTrackingEnabled();
     const stockHtml = (stockOn && med.stock != null && med.stock !== '')
       ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md ' + (Number(med.stock) <= (Number(med.stockLow)||5) ? 'bg-red-50 text-red-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300') + ' text-xs">' + med.stock + ' бр.</span>'
       : '';
 
+    let statusBadge = '';
+    if (archived) statusBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium">📦 Архив</span>';
+    else if (paused) statusBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-700 text-xs font-medium">⏸ Пауза</span>';
+    else statusBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 text-xs font-medium">▶ Активен</span>';
+
+    let actions = '';
+    if (archived) {
+      actions = `
+        <button onclick="restoreMed('${med.id}')" class="p-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-slate-400 hover:text-emerald-500 text-sm" title="Активирай отново">▶</button>
+        <button onclick="editMed('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-500" title="Редактирай">✏️</button>
+        <button onclick="deleteMedPermanently('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-red-500" title="Изтрий завинаги">🗑️</button>`;
+    } else {
+      actions = `
+        <button onclick="toggleMedActive('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-500 text-sm" title="${paused ? 'Продължи' : 'Пауза'}">${paused ? '▶' : '⏸'}</button>
+        <button onclick="editMed('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-500" title="Редактирай">✏️</button>
+        <button onclick="archiveMed('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-amber-600 text-sm" title="Деактивирай (архив)">📦</button>`;
+    }
+
     return `
-      <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 ${paused ? 'opacity-70' : ''}">
+      <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 ${paused || archived ? 'opacity-75' : ''}">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <p class="font-semibold text-lg">${med.name}</p>
@@ -1256,7 +1303,7 @@ function renderMeds() {
               ${med.dose || ''} ${med.form ? '· ' + med.form : ''}
             </p>
             <div class="flex flex-wrap gap-1.5 mt-2">
-              ${paused ? '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium">⏸ На пауза</span>' : '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 text-xs font-medium">▶ Активен</span>'}
+              ${statusBadge}
               <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-medium">${times}</span>
               <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs">${freqMap[med.frequency] || 'Всеки ден'}</span>
               ${condition ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs">${condition}</span>` : ''}
@@ -1267,17 +1314,79 @@ function renderMeds() {
             </div>
             ${med.note ? `<p class="text-xs text-slate-400 mt-2">${med.note}</p>` : ''}
           </div>
-          <div class="flex flex-col gap-1">
-            <button onclick="toggleMedActive('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-500 text-sm" title="${paused ? 'Активирай' : 'Пауза'}">${paused ? '▶' : '⏸'}</button>
-            <button onclick="editMed('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-primary-500" title="Редактирай">✏️</button>
-            <button onclick="deleteMed('${med.id}')" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-red-500" title="Изтрий">🗑️</button>
-          </div>
+          <div class="flex flex-col gap-1">${actions}</div>
         </div>
       </div>`;
   }).join('');
 }
 
+function setMedsSubTab(sub) {
+  window._medsSubTab = sub;
+  renderMeds();
+}
 
+function archiveMed(id) {
+  if (!confirm('Деактивирай медикамента? Ще отиде в Архив. Историята се запазва.')) return;
+  const med = meds.find(m => m.id === id);
+  if (!med) return;
+  med.archived = true;
+  med.active = false;
+  med.archivedAt = new Date().toISOString();
+  if (firebaseReady) {
+    db.collection('users').doc(currentUser.uid).collection('meds').doc(id)
+      .update({ archived: true, active: false, archivedAt: med.archivedAt })
+      .then(() => { renderMeds(); renderToday(); renderCalendar(); renderTakenHistory(); })
+      .catch(err => alert('Грешка: ' + err.message));
+  } else {
+    saveLocalData(currentUser.uid, { meds, logs });
+    renderMeds();
+    renderToday();
+    renderCalendar();
+    if (typeof renderTakenHistory === 'function') renderTakenHistory();
+  }
+}
+
+function restoreMed(id) {
+  const med = meds.find(m => m.id === id);
+  if (!med) return;
+  med.archived = false;
+  med.active = true;
+  med.archivedAt = null;
+  med.resumedAt = new Date().toISOString();
+  // optional: bump start to today so it doesn't flood past calendar — user may want old start
+  // keep startDate as is for history continuity of schedule rules going forward is ok
+  if (firebaseReady) {
+    db.collection('users').doc(currentUser.uid).collection('meds').doc(id)
+      .update({ archived: false, active: true, archivedAt: null, resumedAt: med.resumedAt })
+      .then(() => {
+        window._medsSubTab = 'active';
+        renderMeds();
+        renderToday();
+        renderCalendar();
+      })
+      .catch(err => alert('Грешка: ' + err.message));
+  } else {
+    saveLocalData(currentUser.uid, { meds, logs });
+    window._medsSubTab = 'active';
+    renderMeds();
+    renderToday();
+    renderCalendar();
+  }
+}
+
+function deleteMedPermanently(id) {
+  if (!confirm('Изтрий завинаги? Историята в логовете ще остане, но името може да се покаже като „премахнат медикамент“.')) return;
+  if (firebaseReady) {
+    db.collection('users').doc(currentUser.uid).collection('meds').doc(id).delete()
+      .catch(err => alert('Грешка: ' + err.message));
+  } else {
+    meds = meds.filter(m => m.id !== id);
+    saveLocalData(currentUser.uid, { meds, logs });
+    renderMeds();
+    renderToday();
+    renderCalendar();
+  }
+}
 
 function toggleMedActive(id) {
   const med = meds.find(m => m.id === id);
@@ -1549,18 +1658,8 @@ function saveMed() {
 }
 
 function deleteMed(id) {
-  if (!confirm('Сигурен ли си, че искаш да изтриеш този медикамент?')) return;
-
-  if (firebaseReady) {
-    db.collection('users').doc(currentUser.uid).collection('meds').doc(id).delete()
-      .catch(err => alert('Грешка: ' + err.message));
-  } else {
-    meds = meds.filter(m => m.id !== id);
-    saveLocalData(currentUser.uid, { meds, logs });
-    renderMeds();
-    renderToday();
-    renderCalendar();
-  }
+  // Back-compat: deactivating instead of hard delete
+  archiveMed(id);
 }
 
 // ==================== CALENDAR ====================
@@ -1704,7 +1803,7 @@ function renderCalendarDayDetail() {
     const already = dayMeds.some(m => m.id === medId && (m.times || []).includes(slot));
     if (already) return;
     const med = meds.find(m => m.id === medId);
-    const name = med ? med.name : 'Изтрит медикамент';
+    const name = med ? med.name : 'Премахнат медикамент';
     takenCount++;
     takenNames.push(name + ' · ' + (TIME_LABELS[slot] || slot));
     html += `
@@ -1751,7 +1850,7 @@ function renderTakenHistory() {
       const med = meds.find(m => m.id === medId);
       entries.push({
         dateStr: dateStr,
-        name: med ? med.name : 'Изтрит медикамент',
+        name: med ? med.name : 'Премахнат медикамент',
         dose: med ? (med.dose || '') : '',
         slot: TIME_LABELS[slot] || slot
       });
