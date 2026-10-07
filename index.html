@@ -307,8 +307,15 @@
         </div>
 
         <div id="calendar-day-detail" class="mt-4 hidden">
-          <h3 class="font-semibold mb-2" id="calendar-day-title">Детайли</h3>
+          <h3 class="font-semibold mb-1" id="calendar-day-title">Детайли</h3>
+          <p class="text-xs text-slate-400 mb-2" id="calendar-day-summary"></p>
           <div id="calendar-day-list" class="space-y-2"></div>
+        </div>
+
+        <div class="mt-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
+          <h3 class="font-bold mb-1">Последно взети</h3>
+          <p class="text-xs text-slate-400 mb-3">От логовете — какво си отбелязал/а</p>
+          <div id="taken-history" class="space-y-2 text-sm max-h-64 overflow-y-auto"></div>
         </div>
 
         <!-- Седмичен преглед под календара -->
@@ -598,19 +605,25 @@
             </select>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-sm font-medium mb-1.5">Наличност (бр.)</label>
-            <input type="number" id="med-stock" min="0" placeholder="напр. 30"
-              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-1.5">Напомни под (бр.)</label>
-            <input type="number" id="med-stock-low" min="0" placeholder="напр. 5"
-              class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+        <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600 space-y-2">
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="text-sm font-medium">Следи наличност</span>
+            <input type="checkbox" id="med-track-stock" onchange="toggleStockFields()" class="rounded text-primary-500 w-5 h-5">
+          </label>
+          <div id="stock-fields" class="hidden grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Брой в опаковката</label>
+              <input type="number" id="med-stock" min="0" placeholder="напр. 30"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Напомни под</label>
+              <input type="number" id="med-stock-low" min="0" placeholder="5"
+                class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+            </div>
+            <p class="col-span-2 text-xs text-slate-400">При отбелязване намалява с 1</p>
           </div>
         </div>
-        <p class="text-xs text-slate-400 -mt-2">При всяко отбелязване наличността намалява с 1</p>
 
         <div>
           <label class="block text-sm font-medium mb-1.5">Време на деня *</label>

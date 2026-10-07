@@ -680,6 +680,7 @@ function switchTab(tab) {
     renderCalendar();
     renderWeekReview();
     renderTrendsChart();
+    renderTakenHistory();
   }
   if (tab === 'meds') renderMeds();
   if (tab === 'profile') renderProfilePage();
@@ -699,12 +700,18 @@ function shouldTakeOnDate(med, date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
 
-  // Duration check (start / end) — local dates
-  const start = med.startDate ? parseLocalDate(med.startDate) : null;
-  if (start) {
-    start.setHours(0, 0, 0, 0);
-    if (d < start) return false;
+  // Start date: explicit startDate, else createdAt (date only), else TODAY
+  // Never schedule in the past relative to when the med was added
+  let start = med.startDate ? parseLocalDate(med.startDate) : null;
+  if (!start && med.createdAt) {
+    start = new Date(med.createdAt);
   }
+  if (!start) {
+    start = new Date();
+  }
+  start.setHours(0, 0, 0, 0);
+  if (d < start) return false;
+
   if (med.endDate) {
     const end = parseLocalDate(med.endDate);
     if (end) {
@@ -715,8 +722,7 @@ function shouldTakeOnDate(med, date) {
 
   // Frequency
   if (med.frequency === 'every_other') {
-    const ref = start || (med.createdAt ? new Date(med.createdAt) : new Date());
-    ref.setHours(0, 0, 0, 0);
+    const ref = start;
     const diff = Math.floor((d - ref) / (1000 * 60 * 60 * 24));
     return diff >= 0 && diff % 2 === 0;
   }
@@ -725,7 +731,7 @@ function shouldTakeOnDate(med, date) {
     return (med.days || []).includes(dayOfWeek);
   }
 
-  // daily (default)
+  // daily / lifelong — only from start date forward
   return true;
 }
 
@@ -1100,6 +1106,7 @@ function toggleTaken(medId, time, opts) {
     if (!opts.silent) {
       renderToday();
       renderCalendar();
+      renderTakenHistory();
       if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
     }
   }
@@ -1221,14 +1228,29 @@ function renderMeds() {
   }).join('');
 }
 
+
+function toggleStockFields() {
+  var on = document.getElementById('med-track-stock');
+  var fields = document.getElementById('stock-fields');
+  if (!on || !fields) return;
+  fields.classList.toggle('hidden', !on.checked);
+  if (on.checked) {
+    var low = document.getElementById('med-stock-low');
+    if (low && !low.value) low.value = '5';
+  }
+}
+
 function openAddMedModal() {
   editingMedId = null;
   document.getElementById('modal-title').textContent = 'Нов медикамент';
   document.getElementById('med-name').value = '';
   document.getElementById('med-dose').value = '';
   document.getElementById('med-form').value = 'Таблетка';
+  var track = document.getElementById('med-track-stock');
+  if (track) track.checked = false;
   var ms = document.getElementById('med-stock'); if (ms) ms.value = '';
   var msl = document.getElementById('med-stock-low'); if (msl) msl.value = '5';
+  toggleStockFields();
   document.getElementById('med-condition').value = 'any';
   document.getElementById('med-frequency').value = 'daily';
   document.getElementById('med-note').value = '';
@@ -1259,8 +1281,12 @@ function editMed(id) {
   document.getElementById('med-name').value = med.name;
   document.getElementById('med-dose').value = med.dose || '';
   document.getElementById('med-form').value = med.form || 'Таблетка';
-  var ms2 = document.getElementById('med-stock'); if (ms2) ms2.value = (med.stock != null && med.stock !== '') ? med.stock : '';
+  var hasStock = med.stock != null && med.stock !== '';
+  var track2 = document.getElementById('med-track-stock');
+  if (track2) track2.checked = hasStock;
+  var ms2 = document.getElementById('med-stock'); if (ms2) ms2.value = hasStock ? med.stock : '';
   var msl2 = document.getElementById('med-stock-low'); if (msl2) msl2.value = (med.stockLow != null) ? med.stockLow : 5;
+  toggleStockFields();
   document.getElementById('med-condition').value = med.condition || 'any';
   document.getElementById('med-frequency').value = med.frequency || 'daily';
   document.getElementById('med-note').value = med.note || '';
@@ -1334,6 +1360,9 @@ function saveMed() {
   if (!startDate) {
     startDate = localDateInputValue(new Date()); // today by default (local)
   }
+  // Never allow scheduling before "today" when creating new med without explicit past start
+  // (user can still set start in the future via the field)
+
 
   if (durationType === 'until') {
     endDate = document.getElementById('med-end').value || null;
@@ -1362,8 +1391,20 @@ function saveMed() {
     name,
     dose: document.getElementById('med-dose').value.trim(),
     form: document.getElementById('med-form').value,
-    stock: (function(){ var v = document.getElementById('med-stock'); if(!v||v.value==='') return null; return parseInt(v.value,10); })(),
-    stockLow: (function(){ var v = document.getElementById('med-stock-low'); if(!v||v.value==='') return 5; return parseInt(v.value,10); })(),
+    stock: (function(){
+      var t = document.getElementById('med-track-stock');
+      if (!t || !t.checked) return null;
+      var v = document.getElementById('med-stock');
+      if (!v || v.value === '') return 0;
+      return parseInt(v.value, 10);
+    })(),
+    stockLow: (function(){
+      var t = document.getElementById('med-track-stock');
+      if (!t || !t.checked) return null;
+      var v = document.getElementById('med-stock-low');
+      if (!v || v.value === '') return 5;
+      return parseInt(v.value, 10);
+    })(),
     times,
     condition: document.getElementById('med-condition').value,
     frequency,
@@ -1531,31 +1572,65 @@ function renderCalendarDayDetail() {
   const dayMeds = getMedsForDate(currentDate);
   const detail = document.getElementById('calendar-day-detail');
   const list = document.getElementById('calendar-day-list');
+  const summary = document.getElementById('calendar-day-summary');
   document.getElementById('calendar-day-title').textContent = formatDisplayDate(currentDate);
 
-  if (dayMeds.length === 0) {
-    list.innerHTML = '<p class="text-sm text-slate-500">Няма медикаменти за този ден</p>';
-  } else {
-    const dayLog = logs[formatDate(currentDate)] || {};
-    let html = '';
-    let takenCount = 0, totalCount = 0;
-    dayMeds.forEach(med => {
-      (med.times || []).forEach(t => {
-        totalCount++;
-        const isTaken = !!dayLog[`${med.id}_${t}`];
-        if (isTaken) takenCount++;
-        html += `
-          <div class="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-            <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${isTaken ? 'bg-emerald-500' : 'bg-red-400'}"></div>
-            <div class="flex-1 min-w-0">
-              <p class="font-medium text-sm truncate">${med.name}</p>
-              <p class="text-xs text-slate-400">${TIME_LABELS[t]}${med.dose ? ' · ' + med.dose : ''}</p>
-            </div>
-            <span class="text-xs font-medium ${isTaken ? 'text-emerald-500' : 'text-slate-400'}">${isTaken ? 'Взето' : 'Пропуснато'}</span>
-          </div>`;
-      });
+  const dayLog = logs[formatDate(currentDate)] || {};
+  let html = '';
+  let takenCount = 0, totalCount = 0;
+  const takenNames = [];
+
+  dayMeds.forEach(med => {
+    (med.times || []).forEach(t => {
+      totalCount++;
+      const isTaken = !!dayLog[med.id + '_' + t];
+      if (isTaken) {
+        takenCount++;
+        takenNames.push(med.name + (med.dose ? ' (' + med.dose + ')' : '') + ' · ' + (TIME_LABELS[t] || t));
+      }
+      html += `
+        <div class="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+          <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${isTaken ? 'bg-emerald-500' : 'bg-red-400'}"></div>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium text-sm truncate">${med.name}</p>
+            <p class="text-xs text-slate-400">${TIME_LABELS[t]}${med.dose ? ' · ' + med.dose : ''}</p>
+          </div>
+          <span class="text-xs font-medium ${isTaken ? 'text-emerald-500' : 'text-slate-400'}">${isTaken ? 'Взето' : 'Пропуснато'}</span>
+        </div>`;
     });
-    html = `<p class="text-xs text-slate-400 mb-2">${takenCount} от ${totalCount} взети</p>` + html;
+  });
+
+  // Also show log entries for meds no longer scheduled that day
+  Object.keys(dayLog).forEach(function (key) {
+    if (!dayLog[key]) return;
+    const parts = key.split('_');
+    const medId = parts[0];
+    const slot = parts.slice(1).join('_');
+    const already = dayMeds.some(m => m.id === medId && (m.times || []).includes(slot));
+    if (already) return;
+    const med = meds.find(m => m.id === medId);
+    const name = med ? med.name : 'Изтрит медикамент';
+    takenCount++;
+    takenNames.push(name + ' · ' + (TIME_LABELS[slot] || slot));
+    html += `
+      <div class="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 p-3">
+        <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-emerald-500"></div>
+        <div class="flex-1 min-w-0">
+          <p class="font-medium text-sm truncate">${name}</p>
+          <p class="text-xs text-slate-400">${TIME_LABELS[slot] || slot}</p>
+        </div>
+        <span class="text-xs font-medium text-emerald-500">Взето</span>
+      </div>`;
+  });
+
+  if (summary) {
+    if (totalCount === 0 && takenCount === 0) summary.textContent = 'Няма записи за този ден';
+    else summary.textContent = takenCount + ' взети' + (totalCount ? ' · ' + totalCount + ' планирани' : '');
+  }
+
+  if (!html) {
+    list.innerHTML = '<p class="text-sm text-slate-500">Няма медикаменти / записи за този ден</p>';
+  } else {
     html += `
       <button onclick="switchTab('today')" class="w-full mt-3 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold transition shadow-md shadow-primary-500/20">
         Отвори пълния ден →
@@ -1563,6 +1638,50 @@ function renderCalendarDayDetail() {
     list.innerHTML = html;
   }
   detail.classList.remove('hidden');
+}
+
+function renderTakenHistory() {
+  const el = document.getElementById('taken-history');
+  if (!el) return;
+
+  // Collect last 40 taken entries across dates
+  const entries = [];
+  Object.keys(logs || {}).sort().reverse().forEach(function (dateStr) {
+    const dayLog = logs[dateStr] || {};
+    Object.keys(dayLog).forEach(function (key) {
+      if (!dayLog[key]) return;
+      const parts = key.split('_');
+      const medId = parts[0];
+      const slot = parts.slice(1).join('_');
+      const med = meds.find(m => m.id === medId);
+      entries.push({
+        dateStr: dateStr,
+        name: med ? med.name : 'Изтрит медикамент',
+        dose: med ? (med.dose || '') : '',
+        slot: TIME_LABELS[slot] || slot
+      });
+    });
+  });
+
+  if (entries.length === 0) {
+    el.innerHTML = '<p class="text-slate-400 text-sm">Все още няма отбелязани приеми</p>';
+    return;
+  }
+
+  el.innerHTML = entries.slice(0, 40).map(function (e) {
+    let display = e.dateStr;
+    try {
+      const p = parseLocalDate(e.dateStr);
+      if (p) display = p.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', weekday: 'short' });
+    } catch (err) {}
+    return `<div class="flex items-start gap-2 py-2 border-b border-slate-100 dark:border-slate-700 last:border-0">
+      <span class="text-emerald-500 mt-0.5">✓</span>
+      <div class="min-w-0 flex-1">
+        <p class="font-medium truncate">${e.name}${e.dose ? ' <span class="text-slate-400 font-normal">· ' + e.dose + '</span>' : ''}</p>
+        <p class="text-xs text-slate-400">${display} · ${e.slot}</p>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ==================== WEEKLY REVIEW ====================
