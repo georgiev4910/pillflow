@@ -268,41 +268,53 @@ function hideSplash() {
 }
 
 function applyProfileToUI() {
-  const name = profile.name || currentUser.displayName || currentUser.email.split('@')[0];
-  const avatar = profile.avatar || '👩';
-  const gender = profile.gender || 'f';
-  const ug = document.getElementById('user-greeting');
-  if (ug) ug.textContent = `Здравей, ${name}`;
-  document.getElementById('profile-display-name').textContent = name;
-  document.getElementById('settings-email').textContent = currentUser.email + (firebaseReady ? ' · облак' : ' · локално');
-  document.getElementById('profile-name').value = profile.name || name;
-  document.getElementById('profile-weight').value = profile.weight || '';
-  document.getElementById('profile-height').value = profile.height || '';
-  document.getElementById('profile-blood').value = profile.blood || '';
-  document.getElementById('profile-allergies').value = profile.allergies || '';
-  document.getElementById('profile-avatar').textContent = avatar;
-  const heroAv = document.getElementById('hero-avatar');
-  if (heroAv) heroAv.textContent = avatar;
+  if (!currentUser) return;
+  var name = profile.name || currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : '—');
+  var avatar = profile.avatar || '👩';
+  var gender = profile.gender || 'f';
   selectedAvatar = avatar;
-  document.querySelectorAll('.avatar-opt').forEach(btn => {
+
+  var setVal = function (id, val) {
+    var el = document.getElementById(id);
+    if (el) el.value = val == null ? '' : String(val);
+  };
+  setVal('profile-name', profile.name || name);
+  setVal('profile-weight', profile.weight || '');
+  setVal('profile-height', profile.height || '');
+  setVal('profile-blood', profile.blood || '');
+  setVal('profile-allergies', profile.allergies || '');
+
+  var avEls = ['profile-avatar', 'profile-page-avatar', 'hero-avatar'];
+  avEls.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = avatar;
+  });
+  var pn = document.getElementById('profile-page-name');
+  if (pn) pn.textContent = name;
+  var pe = document.getElementById('profile-page-email');
+  if (pe) pe.textContent = currentUser.email || '';
+  var pdn = document.getElementById('profile-display-name');
+  if (pdn) pdn.textContent = name;
+  var se = document.getElementById('settings-email');
+  if (se) se.textContent = (currentUser.email || '') + (firebaseReady ? ' · облак' : ' · локално');
+
+  document.querySelectorAll('.avatar-opt').forEach(function (btn) {
     if (btn.textContent.trim() === avatar) {
       btn.classList.add('ring-2', 'ring-primary-500', 'bg-primary-50', 'dark:bg-primary-900/30');
     } else {
       btn.classList.remove('ring-2', 'ring-primary-500', 'bg-primary-50', 'dark:bg-primary-900/30');
     }
   });
-  // gender buttons
-  const gf = document.getElementById('gender-f');
-  const gm = document.getElementById('gender-m');
+  var gf = document.getElementById('gender-f');
+  var gm = document.getElementById('gender-m');
   if (gf && gm) {
-    const active = 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-600';
-    const inactive = 'border-slate-200 dark:border-slate-600 text-slate-500';
+    var active = 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-600';
+    var inactive = 'border-slate-200 dark:border-slate-600 text-slate-500';
     gf.className = 'flex-1 py-2 rounded-xl border text-sm font-medium transition ' + (gender === 'f' ? active : inactive);
     gm.className = 'flex-1 py-2 rounded-xl border text-sm font-medium transition ' + (gender === 'm' ? active : inactive);
   }
-  const ct = document.getElementById('complete-text');
-  if (ct) ct.textContent = 'Готово';
 }
+
 
 function toggleProfileSection() {
   const body = document.getElementById('profile-body');
@@ -383,7 +395,10 @@ function applyCalDotsToggle() {
 
 function selectAvatar(emoji) {
   selectedAvatar = emoji;
-  document.getElementById('profile-avatar').textContent = emoji;
+  ['profile-avatar', 'profile-page-avatar'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = emoji;
+  });
   document.querySelectorAll('.avatar-opt').forEach(btn => {
     if (btn.textContent.trim() === emoji) {
       btn.classList.add('ring-2', 'ring-primary-500', 'bg-primary-50', 'dark:bg-primary-900/30');
@@ -394,30 +409,36 @@ function selectAvatar(emoji) {
 }
 
 function saveProfile() {
-  const nameEl = document.getElementById('profile-name');
-  const name = (nameEl && nameEl.value || '').trim();
+  var nameEl = document.getElementById('profile-name');
+  var name = (nameEl && nameEl.value || '').trim();
   if (!name) {
     alert('Моля въведи име');
     return;
   }
 
-  const weightEl = document.getElementById('profile-weight');
-  const heightEl = document.getElementById('profile-height');
-  const bloodEl = document.getElementById('profile-blood');
-  const allergiesEl = document.getElementById('profile-allergies');
+  var weightEl = document.getElementById('profile-weight');
+  var heightEl = document.getElementById('profile-height');
+  var bloodEl = document.getElementById('profile-blood');
+  var allergiesEl = document.getElementById('profile-allergies');
+
+  // Read gender from buttons state
+  var gender = profile.gender || 'f';
+  var gf = document.getElementById('gender-f');
+  if (gf && gf.className.indexOf('border-primary-500') >= 0) gender = 'f';
+  var gm = document.getElementById('gender-m');
+  if (gm && gm.className.indexOf('border-primary-500') >= 0) gender = 'm';
 
   profile = {
     name: name,
     avatar: selectedAvatar || profile.avatar || '👩',
-    gender: profile.gender || 'f',
-    weight: weightEl ? String(weightEl.value || '') : (profile.weight || ''),
-    height: heightEl ? String(heightEl.value || '') : (profile.height || ''),
-    blood: bloodEl ? String(bloodEl.value || '') : (profile.blood || ''),
-    allergies: allergiesEl ? String(allergiesEl.value || '').trim() : (profile.allergies || ''),
+    gender: gender,
+    weight: weightEl ? String(weightEl.value || '').trim() : '',
+    height: heightEl ? String(heightEl.value || '').trim() : '',
+    blood: bloodEl ? String(bloodEl.value || '') : '',
+    allergies: allergiesEl ? String(allergiesEl.value || '').trim() : '',
     updatedAt: new Date().toISOString()
   };
 
-  // Local backup always
   try {
     localStorage.setItem('pillflow_profile_' + currentUser.uid, JSON.stringify(profile));
   } catch (e) { console.warn(e); }
@@ -425,23 +446,22 @@ function saveProfile() {
   currentUser.displayName = name;
   applyProfileToUI();
   if (typeof renderToday === 'function') renderToday();
+  if (typeof renderProfilePage === 'function') renderProfilePage();
+  closeProfileEditModal();
 
   if (firebaseReady && db) {
     db.collection('users').doc(currentUser.uid).collection('profile').doc('main')
-      .set(profile, { merge: true })
+      .set(Object.assign({}, profile), { merge: false })
       .then(function () {
         if (auth && auth.currentUser) {
           auth.currentUser.updateProfile({ displayName: name }).catch(function () {});
         }
-        console.log('Profile saved', profile);
-        alert('Профилът е запазен');
+        console.log('Profile saved to cloud', profile);
       })
       .catch(function (err) {
         console.error(err);
         alert('Запазено на устройството. Облак: ' + err.message);
       });
-  } else {
-    alert('Профилът е запазен на устройството');
   }
 }
 
@@ -476,6 +496,7 @@ function loadProfile() {
           } catch (e) {}
           applyProfileToUI();
           if (typeof renderToday === 'function') renderToday();
+          if (typeof renderProfilePage === 'function') renderProfilePage();
         }
       }, function (err) { console.error('Profile load error', err); });
   }
@@ -503,13 +524,7 @@ function menuGo(where) {
   var menu = document.getElementById('app-menu');
   if (menu) menu.classList.add('hidden');
   if (where === 'profile') {
-    switchTab('settings');
-    var body = document.getElementById('profile-body');
-    if (body && body.classList.contains('hidden')) toggleProfileSection();
-    setTimeout(function () {
-      var el = document.getElementById('profile-body');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
+    switchTab('profile');
   } else if (where === 'meds') {
     switchTab('meds');
   } else if (where === 'settings') {
@@ -519,10 +534,123 @@ function menuGo(where) {
   }
 }
 
+function openProfileEditModal() {
+  applyProfileToUI();
+  var m = document.getElementById('profile-modal');
+  if (m) m.classList.remove('hidden');
+}
+
+function closeProfileEditModal() {
+  var m = document.getElementById('profile-modal');
+  if (m) m.classList.add('hidden');
+}
+
+function updateHeaderForTab(tab) {
+  var icons = {
+    today: '📋',
+    calendar: '📅',
+    meds: '💊',
+    profile: '👤',
+    settings: '⚙️'
+  };
+  var titles = {
+    today: 'Днес',
+    calendar: 'Календар',
+    meds: 'Лекарства',
+    profile: 'Профил',
+    settings: 'Настройки'
+  };
+  var iconEl = document.getElementById('header-icon');
+  var subEl = document.getElementById('header-subtitle');
+  if (iconEl) iconEl.textContent = icons[tab] || '💊';
+  if (subEl) subEl.textContent = titles[tab] || 'PillFlow';
+}
+
+function renderProfilePage() {
+  var name = (profile.name || (currentUser && currentUser.displayName) || '—');
+  var avatar = profile.avatar || '👩';
+  var av = document.getElementById('profile-page-avatar');
+  var nm = document.getElementById('profile-page-name');
+  var em = document.getElementById('profile-page-email');
+  if (av) av.textContent = avatar;
+  if (nm) nm.textContent = name;
+  if (em) em.textContent = (currentUser && currentUser.email) || '';
+
+  // stats
+  var streak = typeof calculateStreak === 'function' ? calculateStreak() : 0;
+  var se = document.getElementById('stat-streak');
+  if (se) se.textContent = streak;
+  var sm = document.getElementById('stat-meds');
+  if (sm) sm.textContent = meds.length;
+
+  // perfect days last 7
+  var today = new Date();
+  today.setHours(0,0,0,0);
+  var perfect = 0, takenTotal = 0;
+  for (var i = 0; i < 7; i++) {
+    var d = new Date(today);
+    d.setDate(d.getDate() - i);
+    if (typeof isDayComplete === 'function' && isDayComplete(d)) perfect++;
+    var dayMeds = typeof getMedsForDate === 'function' ? getMedsForDate(d) : [];
+    var dayLog = logs[formatDate(d)] || {};
+    dayMeds.forEach(function (med) {
+      (med.times || []).forEach(function (t) {
+        if (dayLog[med.id + '_' + t]) takenTotal++;
+      });
+    });
+  }
+  // all-time taken approx from logs
+  var allTaken = 0;
+  Object.keys(logs || {}).forEach(function (ds) {
+    Object.keys(logs[ds] || {}).forEach(function (k) {
+      if (logs[ds][k]) allTaken++;
+    });
+  });
+  var sp = document.getElementById('stat-perfect-week');
+  if (sp) sp.textContent = perfect;
+  var st = document.getElementById('stat-taken-total');
+  if (st) st.textContent = allTaken;
+
+  // health summary
+  var hs = document.getElementById('profile-health-summary');
+  if (hs) {
+    var rows = [];
+    if (profile.weight) rows.push('<div class="flex justify-between"><span class="text-slate-400">Тегло</span><span class="font-medium">' + profile.weight + ' кг</span></div>');
+    if (profile.height) rows.push('<div class="flex justify-between"><span class="text-slate-400">Височина</span><span class="font-medium">' + profile.height + ' см</span></div>');
+    if (profile.blood) rows.push('<div class="flex justify-between"><span class="text-slate-400">Кръвна група</span><span class="font-medium">' + profile.blood + '</span></div>');
+    if (profile.allergies) rows.push('<div class="flex justify-between gap-4"><span class="text-slate-400">Алергии</span><span class="font-medium text-right">' + profile.allergies + '</span></div>');
+    if (profile.gender) rows.push('<div class="flex justify-between"><span class="text-slate-400">Род</span><span class="font-medium">' + (profile.gender === 'm' ? 'Мъж' : 'Жена') + '</span></div>');
+    hs.innerHTML = rows.length ? rows.join('') : '<p class="text-slate-400">Все още няма попълнени данни. Натисни „Редактирай данните“.</p>';
+  }
+
+  // achievements
+  var al = document.getElementById('achievements-list');
+  if (al) {
+    var badges = [
+      { id: 'first', label: 'Първо хапче', ok: allTaken >= 1, icon: '🌱' },
+      { id: 'streak3', label: '3 дни подред', ok: streak >= 3, icon: '🔥' },
+      { id: 'streak7', label: '7 дни подред', ok: streak >= 7, icon: '⭐' },
+      { id: 'streak30', label: '30 дни подред', ok: streak >= 30, icon: '🏆' },
+      { id: 'week', label: 'Перфектна седмица', ok: perfect >= 7, icon: '✨' },
+      { id: 'fifty', label: '50 взети', ok: allTaken >= 50, icon: '💪' }
+    ];
+    al.innerHTML = badges.map(function (b) {
+      return '<div class="p-3 rounded-xl border text-center ' + (b.ok
+        ? 'border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20'
+        : 'border-slate-100 dark:border-slate-700 opacity-40') + '">' +
+        '<div class="text-xl mb-1">' + b.icon + '</div>' +
+        '<div class="text-xs font-medium">' + b.label + '</div>' +
+        (b.ok ? '<div class="text-[10px] text-emerald-500 mt-0.5">отключено</div>' : '<div class="text-[10px] text-slate-400 mt-0.5">заключено</div>') +
+        '</div>';
+    }).join('');
+  }
+}
+
 document.addEventListener('click', function (e) {
   var menu = document.getElementById('app-menu');
   if (!menu || menu.classList.contains('hidden')) return;
-  if (!e.target.closest || (!e.target.closest('#app-menu') && !e.target.closest('button[onclick*="toggleAppMenu"]'))) {
+  if (!e.target.closest) return;
+  if (!e.target.closest('#app-menu') && !e.target.closest('#hamburger-btn') && !e.target.closest('[onclick*="toggleAppMenu"]')) {
     menu.classList.add('hidden');
   }
 });
@@ -546,15 +674,19 @@ function switchTab(tab) {
     activeBtn.classList.add('text-primary-500');
   }
 
+  updateHeaderForTab(tab);
   if (tab === 'today') renderToday();
   if (tab === 'calendar') {
     renderCalendar();
     renderWeekReview();
   }
   if (tab === 'meds') renderMeds();
+  if (tab === 'profile') renderProfilePage();
   if (tab === 'settings') {
     applyNotifToggle();
     loadNotifTimes();
+    applyTheme();
+    applyCalDotsToggle();
   }
   var menu = document.getElementById('app-menu');
   if (menu) menu.classList.add('hidden');
