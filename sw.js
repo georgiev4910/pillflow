@@ -1,11 +1,14 @@
-const CACHE = 'pillflow-v2';
+const CACHE = 'pillflow-v3';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
+  './js/dates.js',
+  './js/logs.js',
   './manifest.json',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', e => {
