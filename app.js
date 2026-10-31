@@ -65,6 +65,14 @@ function timeLabel(t) {
   return TIME_LABELS[t] || t;
 }
 
+/** Label with clock time: "Сутрин · 08:00" or just "14:00" for exact times */
+function timeLabelWithClock(t) {
+  if (isClockTime(t)) return normalizeClock(t);
+  var name = TIME_LABELS[t] || t;
+  var clock = resolveSlotClock(t);
+  return name + ' · ' + clock;
+}
+
 function resolveSlotClock(slot) {
   if (isClockTime(slot)) return normalizeClock(slot);
   var times = {};
@@ -1063,10 +1071,10 @@ function renderToday() {
 
     const allDone = sectionTaken === items.length && items.length > 0;
     const icon = sectionIcons[timeKey] || '🕐';
-    const label = timeLabel(timeKey);
+    const label = timeLabelWithClock(timeKey);
     html += `<div>
       <div class="flex items-center justify-between mb-2.5 gap-2">
-        <h3 class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase section-label flex items-center gap-1.5">
+        <h3 class="text-xs font-semibold text-slate-400 dark:text-slate-500 section-label flex items-center gap-1.5">
           <span>${icon}</span> ${label}
         </h3>
         <div class="flex items-center gap-2">
@@ -1111,7 +1119,8 @@ function renderToday() {
           <div class="flex-1 min-w-0">
             <p class="pill-name font-semibold text-[15px] truncate text-slate-800 dark:text-slate-100">${med.name}</p>
             <p class="text-sm text-slate-400 dark:text-slate-500 mt-0.5 flex flex-wrap gap-x-1.5">
-              ${med.dose ? `<span>${med.dose}</span>` : ''}
+              <span class="text-primary-500 font-medium">${resolveSlotClock(time)}</span>
+              ${med.dose ? `<span>· ${med.dose}</span>` : ''}
               ${med.form ? `<span>· ${med.form}</span>` : ''}
               ${condition ? `<span class="text-amber-500 dark:text-amber-400">· ${condition}</span>` : ''}
               ${(isStockTrackingEnabled() && med.stock != null && med.stock !== '') ? `<span class="${Number(med.stock) <= (Number(med.stockLow)||5) ? 'text-red-500 font-medium' : ''}">· ${med.stock} бр.</span>` : ''}
@@ -1386,7 +1395,7 @@ function renderMeds() {
   if (empty) empty.classList.add('hidden');
 
   list.innerHTML = filtered.map(med => {
-    const times = (med.times || []).map(t => timeLabel(t)).join(', ');
+    const times = (med.times || []).map(t => timeLabelWithClock(t)).join(', ');
     const freqMap = {
       daily: 'Всеки ден',
       every_other: 'През ден',
