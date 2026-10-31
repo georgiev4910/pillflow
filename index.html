@@ -624,8 +624,9 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium mb-1.5">Време на деня *</label>
-          <div class="flex flex-wrap gap-2" id="time-slots">
+          <label class="block text-sm font-medium mb-1.5">Кога се взема *</label>
+          <p class="text-xs text-slate-400 mb-2">Избери периоди и/или точни часове (напр. 3× на ден: 08:00, 14:00, 20:00)</p>
+          <div class="flex flex-wrap gap-2 mb-3" id="time-slots">
             <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
               <input type="checkbox" value="morning" class="time-check rounded text-primary-500"> Сутрин
             </label>
@@ -638,6 +639,16 @@
             <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
               <input type="checkbox" value="night" class="time-check rounded text-primary-500"> Преди лягане
             </label>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600">
+            <p class="text-xs font-medium text-slate-500 mb-2">Точни часове</p>
+            <div id="custom-times-list" class="flex flex-wrap gap-2 mb-2"></div>
+            <div class="flex items-center gap-2">
+              <input type="time" id="custom-time-input" value="08:00"
+                class="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none text-sm">
+              <button type="button" onclick="addCustomTime()" class="px-3 py-2 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold transition">+ Час</button>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5">Добави няколко часа за едно и също лекарство</p>
           </div>
         </div>
 

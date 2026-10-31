@@ -48,6 +48,84 @@ const TIME_LABELS = {
   night: 'Преди лягане'
 };
 
+const PERIOD_ORDER = ['morning', 'noon', 'evening', 'night'];
+const PERIOD_DEFAULT_CLOCK = { morning: '08:00', noon: '13:00', evening: '19:00', night: '22:00' };
+
+function isClockTime(t) {
+  return typeof t === 'string' && /^\d{1,2}:\d{2}$/.test(t);
+}
+
+function normalizeClock(t) {
+  if (!isClockTime(t)) return t;
+  var p = t.split(':');
+  return String(p[0]).padStart(2, '0') + ':' + String(p[1]).padStart(2, '0');
+}
+
+function timeLabel(t) {
+  return TIME_LABELS[t] || t;
+}
+
+function resolveSlotClock(slot) {
+  if (isClockTime(slot)) return normalizeClock(slot);
+  var times = {};
+  try { times = JSON.parse(localStorage.getItem('pillflow_notif_times') || '{}'); } catch (e) {}
+  return times[slot] || PERIOD_DEFAULT_CLOCK[slot] || '12:00';
+}
+
+function sortTimeKeys(keys) {
+  return keys.slice().sort(function (a, b) {
+    var ca = resolveSlotClock(a);
+    var cb = resolveSlotClock(b);
+    return ca.localeCompare(cb);
+  });
+}
+
+// Custom times in med form
+var _customTimes = [];
+
+function renderCustomTimesList() {
+  var el = document.getElementById('custom-times-list');
+  if (!el) return;
+  if (!_customTimes.length) {
+    el.innerHTML = '<span class="text-xs text-slate-400">Няма добавени точни часове</span>';
+    return;
+  }
+  el.innerHTML = _customTimes.map(function (t) {
+    return '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-sm">' +
+      '<span class="font-medium">' + t + '</span>' +
+      '<button type="button" onclick="removeCustomTime(\'' + t + '\')" class="text-slate-400 hover:text-red-500 ml-0.5" title="Махни">×</button></span>';
+  }).join('');
+}
+
+function addCustomTime() {
+  var input = document.getElementById('custom-time-input');
+  if (!input || !input.value) return;
+  var t = normalizeClock(input.value);
+  if (_customTimes.indexOf(t) === -1) {
+    _customTimes.push(t);
+    _customTimes.sort();
+    renderCustomTimesList();
+  }
+}
+
+function removeCustomTime(t) {
+  _customTimes = _customTimes.filter(function (x) { return x !== t; });
+  renderCustomTimesList();
+}
+
+function getSelectedTimes() {
+  var periods = Array.from(document.querySelectorAll('.time-check:checked')).map(function (c) { return c.value; });
+  var all = periods.concat(_customTimes);
+  // unique
+  var seen = {};
+  return all.filter(function (t) {
+    if (seen[t]) return false;
+    seen[t] = true;
+    return true;
+  });
+}
+
+
 const CONDITION_LABELS = {
   any: '',
   empty: 'На гладно',
@@ -944,14 +1022,17 @@ function renderToday() {
   }
   empty.classList.add('hidden');
 
-  const sections = { morning: [], noon: [], evening: [], night: [] };
+  // Group by time key (period or HH:MM), then render in clock order
+  const sections = {};
   dayMeds.forEach(med => {
     (med.times || []).forEach(t => {
-      if (sections[t]) sections[t].push({ med, time: t });
+      if (!sections[t]) sections[t] = [];
+      sections[t].push({ med, time: t });
     });
   });
 
   const sectionIcons = { morning: '🌅', noon: '☀️', evening: '🌆', night: '🌙' };
+  const orderedKeys = sortTimeKeys(Object.keys(sections));
 
   // Course ending soon banner
   let html = '';
@@ -974,17 +1055,19 @@ function renderToday() {
     </div>`;
   }
 
-  ['morning', 'noon', 'evening', 'night'].forEach(timeKey => {
+  orderedKeys.forEach(timeKey => {
     const items = sections[timeKey];
-    if (items.length === 0) return;
+    if (!items || items.length === 0) return;
 
     const sectionTaken = items.filter(({ med, time }) => isLogTaken(dayLog, med.id + '_' + time)).length;
 
     const allDone = sectionTaken === items.length && items.length > 0;
+    const icon = sectionIcons[timeKey] || '🕐';
+    const label = timeLabel(timeKey);
     html += `<div>
       <div class="flex items-center justify-between mb-2.5 gap-2">
         <h3 class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase section-label flex items-center gap-1.5">
-          <span>${sectionIcons[timeKey]}</span> ${TIME_LABELS[timeKey]}
+          <span>${icon}</span> ${label}
         </h3>
         <div class="flex items-center gap-2">
           <span class="text-xs text-slate-400">${sectionTaken}/${items.length}</span>
@@ -1107,7 +1190,7 @@ function openSkipModal(medId, time, fromUnmark) {
   _skipPending = { medId: medId, time: time, dateStr: formatDate(currentDate), fromUnmark: !!fromUnmark };
   const med = meds.find(m => m.id === medId);
   const label = document.getElementById('skip-med-label');
-  if (label) label.textContent = (med ? med.name : 'Медикамент') + ' · ' + (TIME_LABELS[time] || time);
+  if (label) label.textContent = (med ? med.name : 'Медикамент') + ' · ' + (timeLabel(time) || time);
   const m = document.getElementById('skip-modal');
   if (m) m.classList.remove('hidden');
 }
@@ -1303,7 +1386,7 @@ function renderMeds() {
   if (empty) empty.classList.add('hidden');
 
   list.innerHTML = filtered.map(med => {
-    const times = (med.times || []).map(t => TIME_LABELS[t]).join(', ');
+    const times = (med.times || []).map(t => timeLabel(t)).join(', ');
     const freqMap = {
       daily: 'Всеки ден',
       every_other: 'През ден',
@@ -1516,6 +1599,10 @@ function openAddMedModal() {
   if (nbEl) nbEl.value = '15';
   document.querySelectorAll('.time-check').forEach(c => c.checked = false);
   document.querySelectorAll('.day-check').forEach(c => c.checked = false);
+  _customTimes = [];
+  renderCustomTimesList();
+  var cti = document.getElementById('custom-time-input');
+  if (cti) cti.value = '08:00';
   fillDependsOnSelect(null);
   document.getElementById('med-depends-on').value = '';
   toggleFrequencyOptions();
@@ -1559,9 +1646,13 @@ function editMed(id) {
   var nbEl2 = document.getElementById('med-notify-before');
   if (nbEl2) nbEl2.value = String(med.notifyBefore || 15);
 
+  var medTimes = med.times || [];
   document.querySelectorAll('.time-check').forEach(c => {
-    c.checked = (med.times || []).includes(c.value);
+    c.checked = medTimes.includes(c.value);
   });
+  _customTimes = medTimes.filter(function (t) { return isClockTime(t); }).map(normalizeClock);
+  _customTimes.sort();
+  renderCustomTimesList();
   document.querySelectorAll('.day-check').forEach(c => {
     c.checked = (med.days || []).includes(parseInt(c.value));
   });
@@ -1594,7 +1685,7 @@ function saveMed() {
     return;
   }
 
-  const times = Array.from(document.querySelectorAll('.time-check:checked')).map(c => c.value);
+  const times = getSelectedTimes();
   if (times.length === 0) {
     alert('Избери поне едно време на деня');
     return;
@@ -1842,14 +1933,14 @@ function renderCalendarDayDetail() {
       const isTaken = isLogTaken(dayLog, med.id + '_' + t);
       if (isTaken) {
         takenCount++;
-        takenNames.push(med.name + (med.dose ? ' (' + med.dose + ')' : '') + ' · ' + (TIME_LABELS[t] || t));
+        takenNames.push(med.name + (med.dose ? ' (' + med.dose + ')' : '') + ' · ' + (timeLabel(t) || t));
       }
       html += `
         <div class="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
           <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${isTaken ? 'bg-emerald-500' : 'bg-red-400'}"></div>
           <div class="flex-1 min-w-0">
             <p class="font-medium text-sm truncate">${med.name}</p>
-            <p class="text-xs text-slate-400">${TIME_LABELS[t]}${med.dose ? ' · ' + med.dose : ''}</p>
+            <p class="text-xs text-slate-400">${timeLabel(t)}${med.dose ? ' · ' + med.dose : ''}</p>
           </div>
           <span class="text-xs font-medium ${isTaken ? 'text-emerald-500' : 'text-slate-400'}">${isTaken ? 'Взето' : (getLogReason(dayLog, med.id + '_' + t) ? 'Пропуск: ' + (SKIP_REASON_LABELS[getLogReason(dayLog, med.id + '_' + t)] || '') : 'Пропуснато')}</span>
         </div>`;
@@ -1867,13 +1958,13 @@ function renderCalendarDayDetail() {
     const med = meds.find(m => m.id === medId);
     const name = med ? med.name : 'Премахнат медикамент';
     takenCount++;
-    takenNames.push(name + ' · ' + (TIME_LABELS[slot] || slot));
+    takenNames.push(name + ' · ' + (timeLabel(slot) || slot));
     html += `
       <div class="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 p-3">
         <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-emerald-500"></div>
         <div class="flex-1 min-w-0">
           <p class="font-medium text-sm truncate">${name}</p>
-          <p class="text-xs text-slate-400">${TIME_LABELS[slot] || slot}</p>
+          <p class="text-xs text-slate-400">${timeLabel(slot) || slot}</p>
         </div>
         <span class="text-xs font-medium text-emerald-500">Взето</span>
       </div>`;
@@ -1914,7 +2005,7 @@ function renderTakenHistory() {
         dateStr: dateStr,
         name: med ? med.name : 'Премахнат медикамент',
         dose: med ? (med.dose || '') : '',
-        slot: TIME_LABELS[slot] || slot
+        slot: timeLabel(slot) || slot
       });
     });
   });
@@ -2129,7 +2220,7 @@ function scheduleNotifications() {
     if (!med.notify) return;
     var before = med.notifyBefore || 15;
     (med.times || []).forEach(function (slot) {
-      var hhmm = slots[slot];
+      var hhmm = isClockTime(slot) ? normalizeClock(slot) : slots[slot];
       if (!hhmm) return;
       var parts = hhmm.split(':').map(Number);
       var target = new Date();
@@ -2147,7 +2238,7 @@ function scheduleNotifications() {
           return;
         }
         var title = 'PillFlow – ' + med.name;
-        var body = 'След ' + before + ' мин: ' + (TIME_LABELS[slot] || slot) + (med.dose ? ' · ' + med.dose : '');
+        var body = 'След ' + before + ' мин: ' + (timeLabel(slot) || slot) + (med.dose ? ' · ' + med.dose : '');
         var tag = 'pillflow-' + med.id + '-' + slot;
         showPillNotification(title, body, tag);
         scheduleNotifications();
@@ -2265,7 +2356,7 @@ function generateDoctorReport() {
         const ok = isLogTaken(dayLog, med.id + '_' + slot);
         if (ok) tk++;
         const reason = getLogReason(dayLog, med.id + '_' + slot);
-        lines.push({ med: med.name, slot: TIME_LABELS[slot] || slot, ok: ok, dose: med.dose || '', reason: reason });
+        lines.push({ med: med.name, slot: timeLabel(slot) || slot, ok: ok, dose: med.dose || '', reason: reason });
       });
     });
     totalDoses += t;
@@ -2276,7 +2367,7 @@ function generateDoctorReport() {
   const pct = totalDoses ? Math.round((takenDoses / totalDoses) * 100) : 0;
   const medsList = meds.map(m => {
     const stock = (m.stock != null && m.stock !== '') ? m.stock + ' бр.' : '—';
-    return `<tr><td>${m.name}</td><td>${m.dose || '—'}</td><td>${(m.times||[]).map(t=>TIME_LABELS[t]).join(', ')}</td><td>${stock}</td></tr>`;
+    return `<tr><td>${m.name}</td><td>${m.dose || '—'}</td><td>${(m.times||[]).map(t=>timeLabel(t)).join(', ')}</td><td>${stock}</td></tr>`;
   }).join('');
 
   const dayRows = days.filter(d => d.total > 0).map(d => {
