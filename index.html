@@ -194,9 +194,9 @@
           <div class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center text-lg shadow-sm flex-shrink-0">💊</div>
           <div class="min-w-0">
             <h1 class="brand-title text-lg leading-tight text-slate-800 dark:text-white">PillFlow</h1>
-            <button type="button" id="member-switch-btn" onclick="toggleMemberMenu()" class="text-xs text-slate-500 dark:text-slate-400 hover:text-primary-500 flex items-center gap-1 max-w-[140px]">
+            <button type="button" id="member-switch-btn" onclick="toggleMemberMenu()" class="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-primary-500 flex items-center gap-1 max-w-[180px] mt-0.5">
               <span id="member-switch-label" class="truncate">Аз</span>
-              <span class="text-[10px]">▾</span>
+              <span class="text-xs text-slate-400 font-normal">▾</span>
             </button>
           </div>
         </div>
@@ -713,7 +713,22 @@
             <option value="daily">Всеки ден</option>
             <option value="every_other">През ден</option>
             <option value="specific_days">Конкретни дни</option>
+            <option value="interval">През интервал (напр. на 3 месеца)</option>
           </select>
+        </div>
+        <div id="interval-options" class="hidden grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-slate-400">На всеки</label>
+            <input type="number" id="med-interval-value" min="1" value="3" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm outline-none">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400">Единица</label>
+            <select id="med-interval-unit" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm outline-none">
+              <option value="days">дни</option>
+              <option value="weeks">седмици</option>
+              <option value="months">месеци</option>
+            </select>
+          </div>
         </div>
         <div id="specific-days-options" class="hidden">
           <label class="block text-sm font-medium mb-1.5">Дни от седмицата</label>
@@ -835,6 +850,22 @@
             <input type="text" id="med-note" placeholder="по желание"
               class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
           </div>
+
+          <label class="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 border border-slate-200 dark:border-slate-600 cursor-pointer">
+            <input type="checkbox" id="med-show-countdown" class="mt-1 rounded text-primary-500 w-4 h-4">
+            <span>
+              <span class="text-sm font-medium block">Обратно броене до следващ прием</span>
+              <span class="text-xs text-slate-400">Полезно при редки приеми (напр. на 3 месеца) — вижда се на началния екран</span>
+            </span>
+          </label>
+
+          <label id="med-show-on-owner-wrap" class="flex items-start gap-3 p-3 rounded-xl bg-amber-50/80 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 cursor-pointer">
+            <input type="checkbox" id="med-show-on-owner" class="mt-1 rounded text-primary-500 w-4 h-4">
+            <span>
+              <span class="text-sm font-medium block">Показвай и в моя календар / Днес</span>
+              <span class="text-xs text-slate-400">За дете или любимец — напомняне в основния ти изглед с обозначение</span>
+            </span>
+          </label>
         </div>
 <div class="flex gap-3 pt-2">
           <button onclick="closeMedModal()" class="flex-1 py-3 rounded-xl border border-slate-300 dark:border-slate-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">
