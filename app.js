@@ -763,6 +763,13 @@ function menuGo(where) {
   } else if (where === 'settings') {
     switchTab('settings');
     if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
+  } else if (where === 'household') {
+    switchTab('settings');
+    if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
+    setTimeout(function () {
+      var el = document.getElementById('household-status');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
   } else if (where === 'logout') {
     logout();
   }
@@ -2607,9 +2614,10 @@ function renderHouseholdSettings() {
     status.textContent = 'Не си в домакинство. Създай или се присъедини с код.';
     if (actions) actions.classList.remove('hidden');
   }
-  var knob = document.getElementById('share-household-knob');
-  var tog = document.getElementById('share-household-toggle');
-  if (knob && tog) {
+  function syncShareToggle(togId, knobId) {
+    var knob = document.getElementById(knobId);
+    var tog = document.getElementById(togId);
+    if (!knob || !tog) return;
     if (shareWithHousehold) {
       knob.style.transform = 'translateX(20px)';
       tog.classList.add('bg-primary-500');
@@ -2620,6 +2628,8 @@ function renderHouseholdSettings() {
       tog.classList.add('bg-slate-200', 'dark:bg-slate-600');
     }
   }
+  syncShareToggle('share-household-toggle', 'share-household-knob');
+  syncShareToggle('share-household-toggle-menu', 'share-household-knob-menu');
 }
 
 function createHousehold() {
@@ -2822,6 +2832,7 @@ function toggleMemberMenu() {
   var m = document.getElementById('member-menu');
   if (!m) return;
   renderMemberMenuList();
+  if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
   m.classList.toggle('hidden');
 }
 function closeMemberMenu() {

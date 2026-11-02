@@ -217,6 +217,9 @@
             <button onclick="menuGo('settings')" class="w-full px-4 py-3 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
               <span class="text-lg">⚙️</span> Настройки
             </button>
+            <button onclick="menuGo('household')" class="w-full px-4 py-3 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-3">
+              <span class="text-lg">🏠</span> Домакинство
+            </button>
             <div class="border-t border-slate-100 dark:border-slate-700 my-1"></div>
             <button onclick="menuGo('logout')" class="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3">
               <span class="text-lg">🚪</span> Изход
@@ -848,17 +851,7 @@
   <!-- Firebase SDK (compat for simple script usage without build) -->
   
 
-  <!-- MEMBER SWITCH MENU -->
-  <div id="member-menu" class="hidden fixed inset-0 z-[65]">
-    <div class="absolute inset-0 bg-black/30" onclick="closeMemberMenu()"></div>
-    <div class="absolute top-16 left-4 right-4 md:left-auto md:right-auto md:left-1/2 md:-translate-x-1/2 md:w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-      <p class="px-4 pt-3 pb-2 text-xs font-semibold text-slate-400 uppercase">Профил</p>
-      <div id="member-menu-list" class="pb-2"></div>
-      <div class="border-t border-slate-100 dark:border-slate-700">
-        <button type="button" onclick="openAddMemberModal()" class="w-full px-4 py-3 text-left text-sm text-primary-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700">+ Добави човек / любимец</button>
-      </div>
-    </div>
-  </div>
+  
 
   <div id="member-modal" class="fixed inset-0 z-[70] hidden">
     <div class="absolute inset-0 bg-black/50" onclick="closeMemberModal()"></div>
@@ -883,6 +876,28 @@
       <div class="flex gap-2">
         <button type="button" onclick="closeMemberModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600">Отказ</button>
         <button type="button" onclick="saveNewMember()" class="flex-1 py-2.5 rounded-xl bg-primary-500 text-white font-semibold">Добави</button>
+      </div>
+    </div>
+  </div>
+
+    <!-- MEMBER SWITCH MENU -->
+  <div id="member-menu" class="hidden fixed inset-0 z-[65] flex items-start justify-center pt-16 px-4">
+    <div class="absolute inset-0 bg-black/30" onclick="closeMemberMenu()"></div>
+    <div class="relative w-full max-w-sm bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <p class="px-4 pt-3 pb-2 text-xs font-semibold text-slate-400 uppercase">Профил</p>
+      <div id="member-menu-list" class="pb-1 max-h-[40vh] overflow-y-auto"></div>
+      <div class="border-t border-slate-100 dark:border-slate-700 px-4 py-3 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-medium truncate">Моят акаунт споделен</p>
+          <p class="text-[11px] text-slate-400">Домакинството вижда хапчетата ми</p>
+        </div>
+        <button type="button" id="share-household-toggle-menu" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 flex-shrink-0 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+          <span id="share-household-knob-menu" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+        </button>
+      </div>
+      <div class="border-t border-slate-100 dark:border-slate-700">
+        <button type="button" onclick="openAddMemberModal()" class="w-full px-4 py-3 text-left text-sm text-primary-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700">+ Добави човек / любимец</button>
+        <button type="button" onclick="menuGo('household'); closeMemberMenu();" class="w-full px-4 py-3 text-left text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">🏠 Настройки на домакинство</button>
       </div>
     </div>
   </div>
@@ -890,17 +905,7 @@
   <!-- SKIP REASON MODAL -->
 
 
-  <!-- MEMBER SWITCH MENU -->
-  <div id="member-menu" class="hidden fixed inset-0 z-[65]">
-    <div class="absolute inset-0 bg-black/30" onclick="closeMemberMenu()"></div>
-    <div class="absolute top-16 left-4 right-4 md:left-auto md:right-auto md:left-1/2 md:-translate-x-1/2 md:w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-      <p class="px-4 pt-3 pb-2 text-xs font-semibold text-slate-400 uppercase">Профил</p>
-      <div id="member-menu-list" class="pb-2"></div>
-      <div class="border-t border-slate-100 dark:border-slate-700">
-        <button type="button" onclick="openAddMemberModal()" class="w-full px-4 py-3 text-left text-sm text-primary-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700">+ Добави човек / любимец</button>
-      </div>
-    </div>
-  </div>
+  
 
   <div id="member-modal" class="fixed inset-0 z-[70] hidden">
     <div class="absolute inset-0 bg-black/50" onclick="closeMemberModal()"></div>
@@ -928,6 +933,8 @@
       </div>
     </div>
   </div>
+
+    
 
   <!-- SKIP REASON MODAL -->
   <div id="skip-modal" class="fixed inset-0 z-[70] hidden">
