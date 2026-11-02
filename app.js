@@ -419,8 +419,7 @@ function startListeners() {
         logs = {};
         snap.forEach(doc => {
           var parsed = parseLogDocId(doc.id);
-          if (viewingRemoteUid) {
-            // merge all members' logs for the day (self + pets on their account)
+          if (viewingRemoteUid || currentMemberId === 'self') {
             if (!logs[parsed.dateStr]) logs[parsed.dateStr] = {};
             Object.assign(logs[parsed.dateStr], doc.data());
           } else if (parsed.memberId === currentMemberId) {
@@ -959,12 +958,99 @@ function shouldTakeOnDate(med, date) {
     return (med.days || []).includes(dayOfWeek);
   }
 
+  if (med.frequency === 'interval') {
+    var every = Math.max(1, parseInt(med.intervalValue, 10) || 1);
+    var unit = med.intervalUnit || 'days';
+    if (unit === 'months') {
+      var day = start.getDate();
+      var cursor = new Date(start.getFullYear(), start.getMonth(), day);
+      cursor.setHours(0,0,0,0);
+      var guard = 0;
+      while (cursor < d && guard < 240) {
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + every, day);
+        cursor.setHours(0,0,0,0);
+        guard++;
+      }
+      return cursor.getTime() === d.getTime();
+    }
+    var stepDays = every;
+    if (unit === 'weeks') stepDays = every * 7;
+    var diff = Math.floor((d - start) / (1000 * 60 * 60 * 24));
+    return diff >= 0 && diff % stepDays === 0;
+  }
+
   // daily / lifelong — only from start date forward
   return true;
 }
 
+function getMemberMeta(memberId) {
+  var mid = memberId || 'self';
+  var m = members.find(function (x) { return x.id === mid; });
+  if (m) return m;
+  return { id: mid, name: mid === 'self' ? 'Аз' : 'Профил', type: 'person', avatar: '👤' };
+}
+
+function intervalLabel(med) {
+  if (med.frequency !== 'interval') return '';
+  var v = med.intervalValue || 1;
+  var u = med.intervalUnit || 'days';
+  var map = { days: 'дни', weeks: 'седмици', months: 'месеци' };
+  return 'на ' + v + ' ' + (map[u] || u);
+}
+
+function getNextDoseDate(med, fromDate) {
+  var from = fromDate ? new Date(fromDate) : new Date();
+  from.setHours(0, 0, 0, 0);
+  for (var i = 0; i < 800; i++) {
+    var d = new Date(from);
+    d.setDate(d.getDate() + i);
+    d.setHours(0, 0, 0, 0);
+    if (shouldTakeOnDate(med, d)) return d;
+  }
+  return null;
+}
+
+function formatCountdown(med) {
+  var next = getNextDoseDate(med, new Date());
+  if (!next) return null;
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var diff = Math.round((next - today) / (1000 * 60 * 60 * 24));
+  if (diff < 0) return null;
+  if (diff === 0) return { days: 0, label: 'Днес е денят за прием', next: next };
+  if (diff === 1) return { days: 1, label: 'Утре', next: next };
+  if (diff < 30) return { days: diff, label: 'След ' + diff + ' дни', next: next };
+  var months = Math.floor(diff / 30);
+  var rest = diff % 30;
+  var t = 'След ~' + months + (months === 1 ? ' месец' : ' месеца');
+  if (rest && months < 3) t += ' и ' + rest + ' дни';
+  return { days: diff, label: t, next: next };
+}
+
+function getCountdownMeds() {
+  return meds.filter(function (med) {
+    if (!med.showCountdown) return false;
+    if (med.active === false || med.archived === true) return false;
+    if (viewingRemoteUid) return true;
+    return medBelongsToCurrent(med);
+  });
+}
+
 function getMedsForDate(date) {
-  return meds.filter(med => medBelongsToCurrent(med) && shouldTakeOnDate(med, date));
+  var list = meds.filter(function (med) {
+    return medBelongsToCurrent(med) && shouldTakeOnDate(med, date);
+  });
+  if (!viewingRemoteUid && currentMemberId === 'self') {
+    meds.forEach(function (med) {
+      if ((med.memberId || 'self') === 'self') return;
+      if (!med.showOnOwnerToday) return;
+      if (med.active === false || med.archived === true) return;
+      if (!shouldTakeOnDate(med, date)) return;
+      if (list.some(function (x) { return x.id === med.id; })) return;
+      list.push(med);
+    });
+  }
+  return list;
 }
 
 // ==================== TODAY VIEW ====================
@@ -1038,6 +1124,45 @@ function calculateStreak() {
     }
   }
   return streak;
+}
+
+
+function ownerBadgeHtml(med) {
+  var mid = med.memberId || 'self';
+  if (mid === 'self') return '';
+  if (viewingRemoteUid) return '';
+  if (currentMemberId !== 'self') return '';
+  var meta = getMemberMeta(mid);
+  return ' <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-md align-middle">' +
+    (meta.avatar || '👤') + ' ' + (meta.name || '') + '</span>';
+}
+
+function buildCountdownHtml() {
+  var list = typeof getCountdownMeds === 'function' ? getCountdownMeds() : [];
+  if (!list.length) return '';
+  var blocks = [];
+  list.forEach(function (med) {
+    var cd = formatCountdown(med);
+    if (!cd) return;
+    var meta = getMemberMeta(med.memberId || 'self');
+    var who = (med.memberId && med.memberId !== 'self') ? (meta.avatar + ' ' + meta.name + ' · ') : '';
+    var extra = intervalLabel(med);
+    blocks.push(
+      '<div class="p-3.5 rounded-2xl bg-gradient-to-r from-violet-50 to-sky-50 dark:from-violet-900/25 dark:to-sky-900/20 border border-violet-100 dark:border-violet-800/40">' +
+      '<div class="flex items-start justify-between gap-2">' +
+      '<div class="min-w-0">' +
+      '<p class="text-[11px] font-semibold text-violet-500 uppercase tracking-wide">Следващ прием</p>' +
+      '<p class="font-semibold text-slate-800 dark:text-slate-100 truncate">' + who + med.name + (med.dose ? ' · ' + med.dose : '') + '</p>' +
+      (extra ? '<p class="text-xs text-slate-400 mt-0.5">' + extra + '</p>' : '') +
+      '</div>' +
+      '<div class="text-right flex-shrink-0">' +
+      '<p class="text-lg font-bold text-violet-600 dark:text-violet-300">' + (cd.days === 0 ? 'Днес' : cd.days + 'д') + '</p>' +
+      '<p class="text-[11px] text-slate-400">' + cd.label + '</p>' +
+      '</div></div></div>'
+    );
+  });
+  if (!blocks.length) return '';
+  return '<div class="mb-4 space-y-2.5">' + blocks.join('') + '</div>';
 }
 
 function renderToday() {
@@ -1153,6 +1278,12 @@ function renderToday() {
   const empty = document.getElementById('today-empty');
 
   if (dayMeds.length === 0) {
+    var onlyCd = buildCountdownHtml();
+    if (onlyCd) {
+      empty.classList.add('hidden');
+      container.innerHTML = onlyCd;
+      return;
+    }
     container.innerHTML = '';
     empty.classList.remove('hidden');
     return;
@@ -1191,6 +1322,8 @@ function renderToday() {
       ${lowStock.map(m => `<div>🛒 <b>${m.name}</b> — остават ${m.stock} бр. (време за нова опаковка)</div>`).join('')}
     </div>`;
   }
+
+  html += buildCountdownHtml();
 
   orderedKeys.forEach(timeKey => {
     const items = sections[timeKey];
@@ -1377,6 +1510,12 @@ function applyLogChange(medId, time, state) {
   const key = medId + '_' + time;
   const wasTaken = isLogTaken(logs[dateStr] || {}, key);
   const wasComplete = isDayComplete(currentDate);
+  const medRef = meds.find(function (m) { return m.id === medId; });
+  const memberForLog = (medRef && medRef.memberId) ? medRef.memberId : (currentMemberId || 'self');
+  function docIdForMember(mid, ds) {
+    if (!mid || mid === 'self') return ds;
+    return mid + '_' + ds;
+  }
 
   let value;
   if (state.taken) {
@@ -1388,7 +1527,7 @@ function applyLogChange(medId, time, state) {
   }
 
   if (firebaseReady) {
-    const ref = db.collection('users').doc(dataUid()).collection('logs').doc(logDocId(dateStr));
+    const ref = db.collection('users').doc(dataUid()).collection('logs').doc(docIdForMember(memberForLog, dateStr));
     if (value === null) {
       ref.update({ [key]: firebase.firestore.FieldValue.delete() }).catch(function () {
         ref.set({}, { merge: true });
@@ -1745,6 +1884,15 @@ function openAddMedModal() {
   applyStockToggle();
   document.getElementById('med-condition').value = 'any';
   document.getElementById('med-frequency').value = 'daily';
+  var iv = document.getElementById('med-interval-value');
+  if (iv) iv.value = '3';
+  var iu = document.getElementById('med-interval-unit');
+  if (iu) iu.value = 'months';
+  var sc = document.getElementById('med-show-countdown');
+  if (sc) sc.checked = false;
+  var so = document.getElementById('med-show-on-owner');
+  if (so) so.checked = false;
+  if (typeof updateShowOnOwnerVisibility === 'function') updateShowOnOwnerVisibility();
   document.getElementById('med-note').value = '';
   document.getElementById('med-start').value = localDateInputValue(new Date());
   document.getElementById('med-end').value = '';
@@ -1798,6 +1946,15 @@ function editMed(id) {
   toggleStockFields();
   document.getElementById('med-condition').value = med.condition || 'any';
   document.getElementById('med-frequency').value = med.frequency || 'daily';
+  var iv2 = document.getElementById('med-interval-value');
+  if (iv2) iv2.value = med.intervalValue || 3;
+  var iu2 = document.getElementById('med-interval-unit');
+  if (iu2) iu2.value = med.intervalUnit || 'months';
+  var sc2 = document.getElementById('med-show-countdown');
+  if (sc2) sc2.checked = !!med.showCountdown;
+  var so2 = document.getElementById('med-show-on-owner');
+  if (so2) so2.checked = !!med.showOnOwnerToday;
+  if (typeof updateShowOnOwnerVisibility === 'function') updateShowOnOwnerVisibility();
   document.getElementById('med-note').value = med.note || '';
   document.getElementById('med-start').value = med.startDate || '';
   document.getElementById('med-end').value = med.endDate || '';
@@ -1833,9 +1990,19 @@ function closeMedModal() {
   document.getElementById('med-modal').classList.add('hidden');
 }
 
+function updateShowOnOwnerVisibility() {
+  var wrap = document.getElementById('med-show-on-owner-wrap');
+  if (!wrap) return;
+  var show = currentMemberId && currentMemberId !== 'self' && !viewingRemoteUid;
+  wrap.classList.toggle('hidden', !show);
+}
+
 function toggleFrequencyOptions() {
   const freq = document.getElementById('med-frequency').value;
-  document.getElementById('specific-days-options').classList.toggle('hidden', freq !== 'specific_days');
+  var sd = document.getElementById('specific-days-options');
+  var io = document.getElementById('interval-options');
+  if (sd) sd.classList.toggle('hidden', freq !== 'specific_days');
+  if (io) io.classList.toggle('hidden', freq !== 'interval');
 }
 
 function toggleDurationOptions() {
@@ -1925,6 +2092,10 @@ function saveMed() {
     condition: document.getElementById('med-condition').value,
     frequency,
     days,
+    intervalValue: frequency === 'interval' ? (parseInt((document.getElementById('med-interval-value') || {}).value, 10) || 1) : null,
+    intervalUnit: frequency === 'interval' ? ((document.getElementById('med-interval-unit') || {}).value || 'months') : null,
+    showCountdown: !!(document.getElementById('med-show-countdown') || {}).checked,
+    showOnOwnerToday: !!(document.getElementById('med-show-on-owner') || {}).checked,
     startDate,
     endDate,
     durationType,
