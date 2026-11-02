@@ -190,9 +190,15 @@
     <!-- Header -->
     <header class="sticky top-0 z-40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 safe-top">
       <div class="max-w-3xl mx-auto safe-x py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center text-lg shadow-sm">💊</div>
-          <h1 class="brand-title text-lg leading-tight text-slate-800 dark:text-white">PillFlow</h1>
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center text-lg shadow-sm flex-shrink-0">💊</div>
+          <div class="min-w-0">
+            <h1 class="brand-title text-lg leading-tight text-slate-800 dark:text-white">PillFlow</h1>
+            <button type="button" id="member-switch-btn" onclick="toggleMemberMenu()" class="text-xs text-slate-500 dark:text-slate-400 hover:text-primary-500 flex items-center gap-1 max-w-[140px]">
+              <span id="member-switch-label" class="truncate">Аз</span>
+              <span class="text-[10px]">▾</span>
+            </button>
+          </div>
         </div>
         <div class="flex items-center gap-1 relative">
           <button onclick="toggleDarkMode()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition" title="Тема">
@@ -502,6 +508,27 @@
           </button>
         </div>
 
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-3">
+          <div>
+            <h3 class="font-bold">Домакинство</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Споделени профили — виждате и отбелязвате хапчета един за друг (напр. Макс, или взаимен напомняне).</p>
+          </div>
+          <div id="household-status" class="text-sm text-slate-500">Не си в домакинство.</div>
+          <div id="household-actions" class="flex flex-col gap-2">
+            <button type="button" onclick="createHousehold()" class="w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold">Създай домакинство</button>
+            <button type="button" onclick="promptJoinHousehold()" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-medium">Присъедини се с код</button>
+          </div>
+          <div class="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-700">
+            <div>
+              <p class="text-sm font-medium">Сподели моите лекарства</p>
+              <p class="text-xs text-slate-400">Другите в домакинството виждат „Аз“ и могат да отбелязват</p>
+            </div>
+            <button type="button" id="share-household-toggle" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+              <span id="share-household-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+        </div>
+
         <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700">
           <div class="p-4">
             <button onclick="exportData()" class="text-primary-500 font-medium text-sm hover:underline">Експорт на данни (JSON)</button>
@@ -643,7 +670,14 @@
 
         <div>
           <label class="block text-sm font-medium mb-1.5">Кога се взема *</label>
-          <p class="text-xs text-slate-400 mb-2">Избери периоди и/или точни часове (напр. 3× на ден: 08:00, 14:00, 20:00)</p>
+          <p class="text-xs text-slate-400 mb-2">Бърз избор или ръчно по-долу</p>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <button type="button" onclick="applyDoseTemplate(1)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">1× на ден</button>
+            <button type="button" onclick="applyDoseTemplate(2)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">2× на ден</button>
+            <button type="button" onclick="applyDoseTemplate(3)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">3× на ден</button>
+            <button type="button" onclick="applyDoseTemplate(4)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">4× на ден</button>
+          </div>
+          <p class="text-xs text-slate-400 mb-2">Периоди и/или точни часове</p>
           <div class="flex flex-wrap gap-2 mb-3" id="time-slots">
             <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
               <input type="checkbox" value="morning" class="time-check rounded text-primary-500"> Сутрин
@@ -697,26 +731,35 @@
 
         <div id="med-advanced" class="hidden space-y-4 pt-1">
           <div>
-            <label class="block text-sm font-medium mb-1.5">Условие</label>
+            <label class="block text-sm font-medium mb-1.5">Условие спрямо храна</label>
             <select id="med-condition" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
               <option value="any">Без специално условие</option>
               <option value="empty">На гладно</option>
-              <option value="food">С храна</option>
-              <option value="before_food">30 мин преди храна</option>
-              <option value="after_food">30 мин след храна</option>
+              <option value="food">С храна / по време на хранене</option>
+              <option value="before_food">Преди храна (≈30 мин)</option>
+              <option value="after_food">След храна (≈30 мин)</option>
+              <option value="before_food_60">Преди храна (≈60 мин)</option>
+              <option value="after_food_60">След храна (≈60 мин)</option>
+              <option value="evening_empty">Вечер на гладно</option>
             </select>
           </div>
 
           <div>
-            <label class="block text-sm font-medium mb-1.5">Зависимост от друго хапче</label>
+            <label class="block text-sm font-medium mb-1.5">Връзка с друго лекарство</label>
             <select id="med-depends-on" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
               <option value="">Няма</option>
             </select>
-            <div class="mt-2 flex items-center gap-2">
+            <select id="med-depends-rel" class="w-full mt-2 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none">
+              <option value="after">След него (изчакай X мин)</option>
+              <option value="before">Преди него</option>
+              <option value="together">Заедно / по едно и също време</option>
+            </select>
+            <div id="depends-min-row" class="mt-2 flex items-center gap-2">
               <input type="number" id="med-depends-min" min="0" max="240" value="30" placeholder="30"
                 class="w-20 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
-              <span class="text-sm text-slate-500">мин след вземане</span>
+              <span class="text-sm text-slate-500">минути изчакване</span>
             </div>
+            <p class="text-[11px] text-slate-400 mt-1">Напр. щитовидна преди кафе; антибиотик 2 ч след мляко (като отделно „лекарство“-маркер) и т.н.</p>
           </div>
 
           <div>
@@ -804,7 +847,87 @@
 
   <!-- Firebase SDK (compat for simple script usage without build) -->
   
+
+  <!-- MEMBER SWITCH MENU -->
+  <div id="member-menu" class="hidden fixed inset-0 z-[65]">
+    <div class="absolute inset-0 bg-black/30" onclick="closeMemberMenu()"></div>
+    <div class="absolute top-16 left-4 right-4 md:left-auto md:right-auto md:left-1/2 md:-translate-x-1/2 md:w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <p class="px-4 pt-3 pb-2 text-xs font-semibold text-slate-400 uppercase">Профил</p>
+      <div id="member-menu-list" class="pb-2"></div>
+      <div class="border-t border-slate-100 dark:border-slate-700">
+        <button type="button" onclick="openAddMemberModal()" class="w-full px-4 py-3 text-left text-sm text-primary-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700">+ Добави човек / любимец</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="member-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-black/50" onclick="closeMemberModal()"></div>
+    <div class="absolute bottom-0 left-0 right-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-sm w-full bg-white dark:bg-slate-800 rounded-t-3xl md:rounded-2xl p-5 shadow-2xl">
+      <h3 class="text-lg font-bold mb-3">Нов профил</h3>
+      <label class="block text-sm font-medium mb-1">Име</label>
+      <input type="text" id="member-name" placeholder="напр. Нина, Макс…" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 mb-3 outline-none">
+      <label class="block text-sm font-medium mb-1">Тип</label>
+      <select id="member-type" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 mb-3 outline-none">
+        <option value="person">Човек (дете, партньор…)</option>
+        <option value="pet">Домашен любимец</option>
+      </select>
+      <label class="block text-sm font-medium mb-1">Иконка</label>
+      <div class="flex flex-wrap gap-2 mb-4" id="member-avatars">
+        <button type="button" onclick="selectMemberAvatar('👤')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">👤</button>
+        <button type="button" onclick="selectMemberAvatar('👩')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">👩</button>
+        <button type="button" onclick="selectMemberAvatar('👨')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">👨</button>
+        <button type="button" onclick="selectMemberAvatar('🧒')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">🧒</button>
+        <button type="button" onclick="selectMemberAvatar('🐶')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">🐶</button>
+        <button type="button" onclick="selectMemberAvatar('🐱')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">🐱</button>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="closeMemberModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600">Отказ</button>
+        <button type="button" onclick="saveNewMember()" class="flex-1 py-2.5 rounded-xl bg-primary-500 text-white font-semibold">Добави</button>
+      </div>
+    </div>
+  </div>
+
   <!-- SKIP REASON MODAL -->
+
+
+  <!-- MEMBER SWITCH MENU -->
+  <div id="member-menu" class="hidden fixed inset-0 z-[65]">
+    <div class="absolute inset-0 bg-black/30" onclick="closeMemberMenu()"></div>
+    <div class="absolute top-16 left-4 right-4 md:left-auto md:right-auto md:left-1/2 md:-translate-x-1/2 md:w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <p class="px-4 pt-3 pb-2 text-xs font-semibold text-slate-400 uppercase">Профил</p>
+      <div id="member-menu-list" class="pb-2"></div>
+      <div class="border-t border-slate-100 dark:border-slate-700">
+        <button type="button" onclick="openAddMemberModal()" class="w-full px-4 py-3 text-left text-sm text-primary-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700">+ Добави човек / любимец</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="member-modal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-black/50" onclick="closeMemberModal()"></div>
+    <div class="absolute bottom-0 left-0 right-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-sm w-full bg-white dark:bg-slate-800 rounded-t-3xl md:rounded-2xl p-5 shadow-2xl">
+      <h3 class="text-lg font-bold mb-3">Нов профил</h3>
+      <label class="block text-sm font-medium mb-1">Име</label>
+      <input type="text" id="member-name" placeholder="напр. Нина, Макс…" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 mb-3 outline-none">
+      <label class="block text-sm font-medium mb-1">Тип</label>
+      <select id="member-type" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 mb-3 outline-none">
+        <option value="person">Човек (дете, партньор…)</option>
+        <option value="pet">Домашен любимец</option>
+      </select>
+      <label class="block text-sm font-medium mb-1">Иконка</label>
+      <div class="flex flex-wrap gap-2 mb-4" id="member-avatars">
+        <button type="button" onclick="selectMemberAvatar('👤')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">👤</button>
+        <button type="button" onclick="selectMemberAvatar('👩')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">👩</button>
+        <button type="button" onclick="selectMemberAvatar('👨')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">👨</button>
+        <button type="button" onclick="selectMemberAvatar('🧒')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">🧒</button>
+        <button type="button" onclick="selectMemberAvatar('🐶')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">🐶</button>
+        <button type="button" onclick="selectMemberAvatar('🐱')" class="member-av text-2xl p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700">🐱</button>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="closeMemberModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600">Отказ</button>
+        <button type="button" onclick="saveNewMember()" class="flex-1 py-2.5 rounded-xl bg-primary-500 text-white font-semibold">Добави</button>
+      </div>
+    </div>
+  </div>
 
   <!-- SKIP REASON MODAL -->
   <div id="skip-modal" class="fixed inset-0 z-[70] hidden">

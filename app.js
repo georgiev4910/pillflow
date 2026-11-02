@@ -138,12 +138,115 @@ const CONDITION_LABELS = {
   any: '',
   empty: 'На гладно',
   food: 'С храна',
-  before_food: '30 мин преди храна',
-  after_food: '30 мин след храна'
+  before_food: '≈30 мин преди храна',
+  after_food: '≈30 мин след храна',
+  before_food_60: '≈60 мин преди храна',
+  after_food_60: '≈60 мин след храна',
+  evening_empty: 'Вечер на гладно'
 };
+
+const DEPENDS_REL_LABELS = {
+  after: 'след',
+  before: 'преди',
+  together: 'заедно с'
+};
+
+// Household members (self + optional people/pets)
+let members = [{ id: 'self', name: 'Аз', type: 'person', avatar: '👤' }];
+let currentMemberId = 'self';
+let _memberAvatar = '🧒';
+let householdId = null;
+let householdCode = null;
+let householdPeers = []; // [{uid, name, avatar, shareWithHousehold}]
+let shareWithHousehold = true;
+let viewingRemoteUid = null; // when viewing another user's shared profile
+let unsubRemoteMeds = null;
+let unsubRemoteLogs = null;
+
+
 
 // ==================== HELPERS ====================
 // date helpers → js/dates.js
+
+
+
+function getCurrentMember() {
+  return members.find(function (m) { return m.id === currentMemberId; }) || members[0];
+}
+
+function medBelongsToCurrent(med) {
+  // Remote household mate: show all their meds (incl. pet profiles on their account)
+  if (viewingRemoteUid) return true;
+  var mid = med.memberId || 'self';
+  return mid === currentMemberId;
+}
+
+function activeMeds() {
+  return meds.filter(medBelongsToCurrent);
+}
+
+function logDocId(dateStr) {
+  // For remote user we still write under their logs with same doc id scheme
+  if (!currentMemberId || currentMemberId === 'self') return dateStr;
+  return currentMemberId + '_' + dateStr;
+}
+
+function dataUid() {
+  // Whose Firestore path we read/write for meds/logs
+  return viewingRemoteUid || (currentUser && currentUser.uid);
+}
+
+function parseLogDocId(docId) {
+  // returns { memberId, dateStr }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(docId)) return { memberId: 'self', dateStr: docId };
+  var idx = docId.indexOf('_');
+  if (idx > 0) {
+    return { memberId: docId.slice(0, idx), dateStr: docId.slice(idx + 1) };
+  }
+  return { memberId: 'self', dateStr: docId };
+}
+
+function applyDoseTemplate(n) {
+  document.querySelectorAll('.time-check').forEach(function (c) { c.checked = false; });
+  _customTimes = [];
+  var presets = {
+    1: ['08:00'],
+    2: ['08:00', '20:00'],
+    3: ['08:00', '14:00', '20:00'],
+    4: ['08:00', '12:00', '16:00', '20:00']
+  };
+  _customTimes = (presets[n] || presets[1]).slice();
+  renderCustomTimesList();
+}
+
+function updateDependsMinVisibility() {
+  var rel = document.getElementById('med-depends-rel');
+  var row = document.getElementById('depends-min-row');
+  if (!row) return;
+  var v = rel ? rel.value : 'after';
+  row.classList.toggle('hidden', v !== 'after');
+}
+
+function checkConditionConflicts(newMed) {
+  // soft warning if same slot has empty vs food-type conditions
+  var foodish = { empty: 1, food: 1, before_food: 1, after_food: 1, before_food_60: 1, after_food_60: 1, evening_empty: 1 };
+  if (!newMed.condition || newMed.condition === 'any' || !foodish[newMed.condition]) return null;
+  var conflicts = [];
+  activeMeds().forEach(function (m) {
+    if (m.id === newMed.id) return;
+    if (m.archived || m.active === false) return;
+    if (!m.condition || m.condition === 'any' || !foodish[m.condition]) return;
+    var emptySide = (newMed.condition === 'empty' || newMed.condition === 'evening_empty' || (newMed.condition || '').indexOf('before') === 0);
+    var otherEmpty = (m.condition === 'empty' || m.condition === 'evening_empty' || (m.condition || '').indexOf('before') === 0);
+    var foodSide = (newMed.condition === 'food' || (newMed.condition || '').indexOf('after') === 0);
+    var otherFood = (m.condition === 'food' || (m.condition || '').indexOf('after') === 0);
+    var shareTime = (newMed.times || []).some(function (t) { return (m.times || []).indexOf(t) !== -1; });
+    if (shareTime && ((emptySide && otherFood) || (foodSide && otherEmpty))) {
+      conflicts.push(m.name + ' (' + (CONDITION_LABELS[m.condition] || m.condition) + ')');
+    }
+  });
+  return conflicts.length ? conflicts : null;
+}
 
 
 function showRegister() {
@@ -298,7 +401,8 @@ function startListeners() {
   stopListeners();
 
   if (firebaseReady) {
-    unsubMeds = db.collection('users').doc(currentUser.uid).collection('meds')
+    var uidPath = dataUid();
+    unsubMeds = db.collection('users').doc(uidPath).collection('meds')
       .onSnapshot(snap => {
         meds = [];
         snap.forEach(doc => {
@@ -310,14 +414,22 @@ function startListeners() {
         renderCalendar();
       }, err => console.error('Meds listener error', err));
 
-    unsubLogs = db.collection('users').doc(currentUser.uid).collection('logs')
+    unsubLogs = db.collection('users').doc(uidPath).collection('logs')
       .onSnapshot(snap => {
         logs = {};
         snap.forEach(doc => {
-          logs[doc.id] = doc.data();
+          var parsed = parseLogDocId(doc.id);
+          if (viewingRemoteUid) {
+            // merge all members' logs for the day (self + pets on their account)
+            if (!logs[parsed.dateStr]) logs[parsed.dateStr] = {};
+            Object.assign(logs[parsed.dateStr], doc.data());
+          } else if (parsed.memberId === currentMemberId) {
+            logs[parsed.dateStr] = doc.data();
+          }
         });
         renderToday();
         renderCalendar();
+        if (typeof renderTakenHistory === 'function') renderTakenHistory();
       }, err => console.error('Logs listener error', err));
   } else {
     const data = getLocalData(currentUser.uid);
@@ -567,6 +679,12 @@ function saveProfile() {
           auth.currentUser.updateProfile({ displayName: name }).catch(function () {});
         }
         console.log('Profile saved to cloud', profile);
+        if (householdId) {
+          var u = {};
+          u['members.' + currentUser.uid + '.name'] = profile.name || 'Аз';
+          u['members.' + currentUser.uid + '.avatar'] = profile.avatar || '👤';
+          db.collection('households').doc(householdId).update(u).catch(function () {});
+        }
       })
       .catch(function (err) {
         console.error(err);
@@ -620,10 +738,13 @@ function enterApp() {
   currentDate = new Date();
   currentDate.setHours(0, 0, 0, 0);
   loadProfile();
+  loadMembers();
+  loadHousehold();
   startListeners();
   scheduleNotifications();
   applyStockToggle();
   applyCalDotsToggle();
+  updateMemberSwitchLabel();
 }
 
 // ==================== APP MENU ====================
@@ -641,6 +762,7 @@ function menuGo(where) {
     switchTab('meds');
   } else if (where === 'settings') {
     switchTab('settings');
+    if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
   } else if (where === 'logout') {
     logout();
   }
@@ -835,7 +957,7 @@ function shouldTakeOnDate(med, date) {
 }
 
 function getMedsForDate(date) {
-  return meds.filter(med => shouldTakeOnDate(med, date));
+  return meds.filter(med => medBelongsToCurrent(med) && shouldTakeOnDate(med, date));
 }
 
 // ==================== TODAY VIEW ====================
@@ -1091,13 +1213,11 @@ function renderToday() {
       const condition = CONDITION_LABELS[med.condition] || '';
       const note = med.note ? med.note : '';
 
-      // Dependency check
+      // Dependency check (after / before / together)
       let locked = false;
       let lockMsg = '';
+      const depRel = med.dependsRel || 'after';
       if (med.dependsOn && !isTaken) {
-        const depTaken = (med.times || []).some(t => dayLog[`${med.dependsOn}_${t}`]) ||
-          Object.keys(dayLog).some(k => k.startsWith(med.dependsOn + '_') && dayLog[k]);
-        // Check if any dose of dependency med was taken today
         const depMed = meds.find(m => m.id === med.dependsOn);
         let anyDepTaken = false;
         if (depMed) {
@@ -1105,13 +1225,34 @@ function renderToday() {
             if (isLogTaken(dayLog, depMed.id + '_' + t)) anyDepTaken = true;
           });
         }
-        if (!anyDepTaken) {
-          locked = true;
-          lockMsg = `Първо вземи ${depMed ? depMed.name : 'другото хапче'}`;
-        } else {
-          // Could show "wait X min" - simplified: unlock once dependency is taken
-          lockMsg = `${med.dependsMin || 30} мин след ${depMed ? depMed.name : ''}`;
+        if (depRel === 'after') {
+          if (!anyDepTaken) {
+            locked = true;
+            lockMsg = 'Първо вземи ' + (depMed ? depMed.name : 'другото');
+          } else {
+            lockMsg = (med.dependsMin || 30) + ' мин след ' + (depMed ? depMed.name : '');
+          }
+        } else if (depRel === 'before') {
+          // this med should be taken before dependsOn — no lock on this one
+          lockMsg = 'Преди ' + (depMed ? depMed.name : 'другото');
+        } else if (depRel === 'together') {
+          lockMsg = 'Заедно с ' + (depMed ? depMed.name : 'другото');
         }
+      }
+      // Reverse: someone depends on ME with "before" → they take first, lock me
+      if (!isTaken && !locked) {
+        activeMeds().forEach(function (other) {
+          if (other.dependsOn === med.id && (other.dependsRel || 'after') === 'before') {
+            var otherTaken = false;
+            (other.times || []).forEach(function (t) {
+              if (isLogTaken(dayLog, other.id + '_' + t)) otherTaken = true;
+            });
+            if (!otherTaken) {
+              locked = true;
+              lockMsg = 'Първо: ' + other.name + ' (преди това)';
+            }
+          }
+        });
       }
 
       html += `
@@ -1171,7 +1312,7 @@ function adjustStock(medId, delta) {
   const next = Math.max(0, Number(med.stock) + delta);
   med.stock = next;
   if (firebaseReady) {
-    db.collection('users').doc(currentUser.uid).collection('meds').doc(medId)
+    db.collection('users').doc(dataUid()).collection('meds').doc(medId)
       .update({ stock: next }).catch(err => console.warn('stock update', err));
   } else {
     saveLocalData(currentUser.uid, { meds, logs });
@@ -1240,7 +1381,7 @@ function applyLogChange(medId, time, state) {
   }
 
   if (firebaseReady) {
-    const ref = db.collection('users').doc(currentUser.uid).collection('logs').doc(dateStr);
+    const ref = db.collection('users').doc(dataUid()).collection('logs').doc(logDocId(dateStr));
     if (value === null) {
       ref.update({ [key]: firebase.firestore.FieldValue.delete() }).catch(function () {
         ref.set({}, { merge: true });
@@ -1342,6 +1483,7 @@ function fillDependsOnSelect(excludeId) {
   meds.forEach(m => {
     if (m.id === excludeId) return;
     if (m.archived === true) return;
+    if (!medBelongsToCurrent(m)) return;
     const opt = document.createElement('option');
     opt.value = m.id;
     opt.textContent = m.name + (m.active === false ? ' (пауза)' : '');
@@ -1367,7 +1509,7 @@ function renderMeds() {
     }
   }
 
-  let filtered = meds.filter(m => sub === 'archive' ? m.archived === true : m.archived !== true);
+  let filtered = meds.filter(m => medBelongsToCurrent(m) && (sub === 'archive' ? m.archived === true : m.archived !== true));
   const q = (document.getElementById('meds-search') && document.getElementById('meds-search').value || '').trim().toLowerCase();
   if (q) {
     filtered = filtered.filter(m => {
@@ -1412,7 +1554,7 @@ function renderMeds() {
     }
     const depMed = med.dependsOn ? meds.find(m => m.id === med.dependsOn) : null;
     const depHtml = depMed
-      ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs">${med.dependsMin || 30} мин след ${depMed.name}</span>`
+      ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs">${DEPENDS_REL_LABELS[med.dependsRel || 'after'] || ''} ${depMed.name}${(med.dependsRel || 'after') === 'after' ? ' (' + (med.dependsMin || 30) + ' мин)' : ''}</span>`
       : '';
 
     const paused = med.active === false && med.archived !== true;
@@ -1479,7 +1621,7 @@ function archiveMed(id) {
   med.active = false;
   med.archivedAt = new Date().toISOString();
   if (firebaseReady) {
-    db.collection('users').doc(currentUser.uid).collection('meds').doc(id)
+    db.collection('users').doc(dataUid()).collection('meds').doc(id)
       .update({ archived: true, active: false, archivedAt: med.archivedAt })
       .then(() => { renderMeds(); renderToday(); renderCalendar(); renderTakenHistory(); })
       .catch(err => alert('Грешка: ' + err.message));
@@ -1502,7 +1644,7 @@ function restoreMed(id) {
   // optional: bump start to today so it doesn't flood past calendar — user may want old start
   // keep startDate as is for history continuity of schedule rules going forward is ok
   if (firebaseReady) {
-    db.collection('users').doc(currentUser.uid).collection('meds').doc(id)
+    db.collection('users').doc(dataUid()).collection('meds').doc(id)
       .update({ archived: false, active: true, archivedAt: null, resumedAt: med.resumedAt })
       .then(() => {
         window._medsSubTab = 'active';
@@ -1523,7 +1665,7 @@ function restoreMed(id) {
 function deleteMedPermanently(id) {
   if (!confirm('Изтрий завинаги? Историята в логовете ще остане, но името може да се покаже като „премахнат медикамент“.')) return;
   if (firebaseReady) {
-    db.collection('users').doc(currentUser.uid).collection('meds').doc(id).delete()
+    db.collection('users').doc(dataUid()).collection('meds').doc(id).delete()
       .catch(err => alert('Грешка: ' + err.message));
   } else {
     meds = meds.filter(m => m.id !== id);
@@ -1551,7 +1693,7 @@ function toggleMedActive(id) {
   }
 
   if (firebaseReady) {
-    db.collection('users').doc(currentUser.uid).collection('meds').doc(id)
+    db.collection('users').doc(dataUid()).collection('meds').doc(id)
       .update({ active: newActive, pausedAt: med.pausedAt || null, resumedAt: med.resumedAt || null })
       .then(() => { renderMeds(); renderToday(); renderCalendar(); })
       .catch(err => alert('Грешка: ' + err.message));
@@ -1602,6 +1744,9 @@ function openAddMedModal() {
   document.getElementById('med-duration').value = 'lifelong';
   document.getElementById('med-duration-value').value = '';
   document.getElementById('med-depends-min').value = '30';
+  var relN = document.getElementById('med-depends-rel');
+  if (relN) relN.value = 'after';
+  updateDependsMinVisibility();
   var nEl = document.getElementById('med-notify');
   if (nEl) nEl.checked = false;
   var nbEl = document.getElementById('med-notify-before');
@@ -1616,6 +1761,8 @@ function openAddMedModal() {
   document.getElementById('med-depends-on').value = '';
   toggleFrequencyOptions();
   toggleDurationOptions();
+  var relSel = document.getElementById('med-depends-rel');
+  if (relSel) relSel.onchange = updateDependsMinVisibility;
   document.getElementById('med-modal').classList.remove('hidden');
 }
 
@@ -1650,6 +1797,9 @@ function editMed(id) {
   document.getElementById('med-duration').value = med.durationType || (med.endDate ? 'until' : 'lifelong');
   document.getElementById('med-duration-value').value = med.durationValue || '';
   document.getElementById('med-depends-min').value = med.dependsMin || 30;
+  var relEl = document.getElementById('med-depends-rel');
+  if (relEl) relEl.value = med.dependsRel || 'after';
+  updateDependsMinVisibility();
   var nEl2 = document.getElementById('med-notify');
   if (nEl2) nEl2.checked = !!med.notify;
   var nbEl2 = document.getElementById('med-notify-before');
@@ -1773,7 +1923,9 @@ function saveMed() {
     durationType,
     durationValue: durationValue || null,
     dependsOn,
+    dependsRel: dependsOn ? ((document.getElementById('med-depends-rel') || {}).value || 'after') : null,
     dependsMin: dependsOn ? dependsMin : null,
+    memberId: currentMemberId || 'self',
     notify: notifyEl ? !!notifyEl.checked : false,
     notifyBefore: notifyBeforeEl ? parseInt(notifyBeforeEl.value) || 15 : 15,
     active: (function(){
@@ -1787,15 +1939,20 @@ function saveMed() {
   if (medData.active === false) medData.pausedAt = new Date().toISOString();
   if (medData.active === true && editingMedId) medData.resumedAt = new Date().toISOString();
 
+  var conflicts = checkConditionConflicts(Object.assign({ id: editingMedId }, medData));
+  if (conflicts && conflicts.length) {
+    if (!confirm('Възможен конфликт с храна/условия със:\n• ' + conflicts.join('\n• ') + '\n\nЗапази въпреки това?')) return;
+  }
+
   if (firebaseReady) {
     if (editingMedId) {
-      db.collection('users').doc(currentUser.uid).collection('meds').doc(editingMedId)
+      db.collection('users').doc(dataUid()).collection('meds').doc(editingMedId)
         .update(medData)
         .then(() => { closeMedModal(); scheduleNotifications(); })
         .catch(err => alert('Грешка: ' + err.message));
     } else {
       medData.createdAt = new Date().toISOString();
-      db.collection('users').doc(currentUser.uid).collection('meds').add(medData)
+      db.collection('users').doc(dataUid()).collection('meds').add(medData)
         .then(() => { closeMedModal(); scheduleNotifications(); })
         .catch(err => alert('Грешка: ' + err.message));
     }
@@ -2284,7 +2441,7 @@ function clearAllData() {
   if (firebaseReady) {
     const batch = db.batch();
     meds.forEach(m => {
-      batch.delete(db.collection('users').doc(currentUser.uid).collection('meds').doc(m.id));
+      batch.delete(db.collection('users').doc(dataUid()).collection('meds').doc(m.id));
     });
     Object.keys(logs).forEach(dateStr => {
       batch.delete(db.collection('users').doc(currentUser.uid).collection('logs').doc(dateStr));
@@ -2416,6 +2573,396 @@ function generateDoctorReport() {
   if (!w) { alert('Разреши pop-up за справката'); return; }
   w.document.write(html);
   w.document.close();
+}
+
+
+
+
+
+// ==================== HOUSEHOLD (shared profiles) ====================
+function randomHouseholdCode() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var s = 'PILL-';
+  for (var i = 0; i < 4; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+  return s;
+}
+
+function renderHouseholdSettings() {
+  var status = document.getElementById('household-status');
+  var actions = document.getElementById('household-actions');
+  if (!status) return;
+  if (!firebaseReady) {
+    status.textContent = 'Домакинството изисква Firebase акаунт (облак).';
+    if (actions) actions.classList.add('hidden');
+    return;
+  }
+  if (actions) actions.classList.remove('hidden');
+  if (householdId && householdCode) {
+    var peerNames = householdPeers.map(function (p) { return p.name || 'Член'; }).join(', ');
+    status.innerHTML = '<p class="font-medium text-slate-700 dark:text-slate-200">Код: <span class="font-mono text-primary-600">' + householdCode + '</span></p>' +
+      '<p class="text-xs mt-1">Членове: ' + (peerNames || 'само ти') + '</p>' +
+      '<button type="button" onclick="leaveHousehold()" class="text-xs text-red-500 mt-2 hover:underline">Напусни домакинството</button>';
+    if (actions) actions.classList.add('hidden');
+  } else {
+    status.textContent = 'Не си в домакинство. Създай или се присъедини с код.';
+    if (actions) actions.classList.remove('hidden');
+  }
+  var knob = document.getElementById('share-household-knob');
+  var tog = document.getElementById('share-household-toggle');
+  if (knob && tog) {
+    if (shareWithHousehold) {
+      knob.style.transform = 'translateX(20px)';
+      tog.classList.add('bg-primary-500');
+      tog.classList.remove('bg-slate-200', 'dark:bg-slate-600');
+    } else {
+      knob.style.transform = 'translateX(0)';
+      tog.classList.remove('bg-primary-500');
+      tog.classList.add('bg-slate-200', 'dark:bg-slate-600');
+    }
+  }
+}
+
+function createHousehold() {
+  if (!firebaseReady || !currentUser) {
+    alert('Влез с Firebase акаунт, за да създадеш домакинство.');
+    return;
+  }
+  var code = randomHouseholdCode();
+  var hid = 'hh_' + Date.now().toString(36);
+  var data = {
+    code: code,
+    codeUpper: code.toUpperCase(),
+    ownerUid: currentUser.uid,
+    memberUids: [currentUser.uid],
+    members: {},
+    createdAt: new Date().toISOString()
+  };
+  data.members[currentUser.uid] = {
+    uid: currentUser.uid,
+    name: (profile && profile.name) || currentUser.displayName || currentUser.email || 'Аз',
+    avatar: (profile && profile.avatar) || '👤',
+    shareWithHousehold: shareWithHousehold !== false,
+    joinedAt: new Date().toISOString()
+  };
+  db.collection('households').doc(hid).set(data).then(function () {
+    return db.collection('users').doc(currentUser.uid).collection('settings').doc('household').set({
+      householdId: hid,
+      code: code,
+      shareWithHousehold: shareWithHousehold !== false
+    }, { merge: true });
+  }).then(function () {
+    householdId = hid;
+    householdCode = code;
+    alert('Домакинство създадено!\n\nКод за покана: ' + code + '\n\nСподели го с Нина (или друг).');
+    loadHousehold();
+  }).catch(function (err) {
+    alert('Грешка: ' + err.message);
+  });
+}
+
+function promptJoinHousehold() {
+  var code = prompt('Въведи кода на домакинството (напр. PILL-A3K2):');
+  if (!code) return;
+  joinHousehold(code.trim().toUpperCase());
+}
+
+function joinHousehold(code) {
+  if (!firebaseReady || !currentUser) {
+    alert('Влез с Firebase акаунт.');
+    return;
+  }
+  code = (code || '').toUpperCase().trim();
+  db.collection('households').where('codeUpper', '==', code).limit(1).get()
+    .then(function (snap) {
+      if (snap.empty) {
+        // fallback without codeUpper
+        return db.collection('households').where('code', '==', code).limit(1).get();
+      }
+      return snap;
+    })
+    .then(function (snap) {
+      if (!snap || snap.empty) {
+        alert('Невалиден код.');
+        return null;
+      }
+      var doc = snap.docs[0];
+      var hid = doc.id;
+      var data = doc.data();
+      var uids = data.memberUids || [];
+      if (uids.indexOf(currentUser.uid) === -1) uids.push(currentUser.uid);
+      var members = data.members || {};
+      members[currentUser.uid] = {
+        uid: currentUser.uid,
+        name: (profile && profile.name) || currentUser.displayName || currentUser.email || 'Аз',
+        avatar: (profile && profile.avatar) || '👤',
+        shareWithHousehold: shareWithHousehold !== false,
+        joinedAt: new Date().toISOString()
+      };
+      return doc.ref.update({
+        memberUids: uids,
+        members: members
+      }).then(function () {
+        return db.collection('users').doc(currentUser.uid).collection('settings').doc('household').set({
+          householdId: hid,
+          code: data.code || code,
+          shareWithHousehold: shareWithHousehold !== false
+        }, { merge: true });
+      }).then(function () {
+        householdId = hid;
+        householdCode = data.code || code;
+        alert('Присъединен към домакинство ' + householdCode);
+        loadHousehold();
+      });
+    })
+    .catch(function (err) {
+      alert('Грешка: ' + err.message + '\n\nПровери Firestore rules за households.');
+    });
+}
+
+function leaveHousehold() {
+  if (!householdId || !currentUser) return;
+  if (!confirm('Напускаш домакинството? Споделените профили на другите няма да се виждат.')) return;
+  var href = db.collection('households').doc(householdId);
+  href.get().then(function (doc) {
+    if (!doc.exists) return;
+    var data = doc.data();
+    var uids = (data.memberUids || []).filter(function (u) { return u !== currentUser.uid; });
+    var members = data.members || {};
+    delete members[currentUser.uid];
+    return href.update({ memberUids: uids, members: members });
+  }).then(function () {
+    return db.collection('users').doc(currentUser.uid).collection('settings').doc('household').set({
+      householdId: null,
+      code: null
+    }, { merge: true });
+  }).then(function () {
+    householdId = null;
+    householdCode = null;
+    householdPeers = [];
+    viewingRemoteUid = null;
+    renderHouseholdSettings();
+    updateMemberSwitchLabel();
+    startListeners();
+  }).catch(function (err) { alert(err.message); });
+}
+
+function toggleShareWithHousehold() {
+  shareWithHousehold = !shareWithHousehold;
+  renderHouseholdSettings();
+  if (!firebaseReady || !currentUser) return;
+  db.collection('users').doc(currentUser.uid).collection('settings').doc('household')
+    .set({ shareWithHousehold: shareWithHousehold }, { merge: true }).catch(function () {});
+  if (householdId) {
+    var update = {};
+    update['members.' + currentUser.uid + '.shareWithHousehold'] = shareWithHousehold;
+    update['members.' + currentUser.uid + '.name'] = (profile && profile.name) || currentUser.displayName || 'Аз';
+    update['members.' + currentUser.uid + '.avatar'] = (profile && profile.avatar) || '👤';
+    db.collection('households').doc(householdId).update(update).catch(function () {});
+  }
+}
+
+function loadHousehold() {
+  if (!firebaseReady || !currentUser) {
+    renderHouseholdSettings();
+    return;
+  }
+  db.collection('users').doc(currentUser.uid).collection('settings').doc('household')
+    .onSnapshot(function (doc) {
+      if (doc.exists) {
+        var d = doc.data();
+        householdId = d.householdId || null;
+        householdCode = d.code || null;
+        if (typeof d.shareWithHousehold === 'boolean') shareWithHousehold = d.shareWithHousehold;
+      } else {
+        householdId = null;
+        householdCode = null;
+      }
+      renderHouseholdSettings();
+      if (householdId) {
+        subscribeHouseholdDoc(householdId);
+      } else {
+        householdPeers = [];
+        renderMemberMenuList();
+      }
+    }, function () {});
+}
+
+function subscribeHouseholdDoc(hid) {
+  db.collection('households').doc(hid).onSnapshot(function (doc) {
+    if (!doc.exists) {
+      householdPeers = [];
+      return;
+    }
+    var data = doc.data();
+    householdCode = data.code || householdCode;
+    var members = data.members || {};
+    householdPeers = [];
+    Object.keys(members).forEach(function (uid) {
+      if (uid === currentUser.uid) return;
+      var m = members[uid];
+      if (m && m.shareWithHousehold !== false) {
+        householdPeers.push({
+          uid: uid,
+          name: m.name || 'Член',
+          avatar: m.avatar || '👤',
+          shareWithHousehold: true
+        });
+      }
+    });
+    // also update my entry name/avatar occasionally
+    renderHouseholdSettings();
+    renderMemberMenuList();
+    updateMemberSwitchLabel();
+  }, function (err) { console.warn('household', err); });
+}
+
+
+// ==================== HOUSEHOLD MEMBERS ====================
+function toggleMemberMenu() {
+  var m = document.getElementById('member-menu');
+  if (!m) return;
+  renderMemberMenuList();
+  m.classList.toggle('hidden');
+}
+function closeMemberMenu() {
+  var m = document.getElementById('member-menu');
+  if (m) m.classList.add('hidden');
+}
+function renderMemberMenuList() {
+  var list = document.getElementById('member-menu-list');
+  if (!list) return;
+  var html = members.map(function (mem) {
+    var active = !viewingRemoteUid && mem.id === currentMemberId;
+    return '<button type="button" onclick="switchMember(\'' + mem.id + '\')" class="w-full px-4 py-3 text-left text-sm flex items-center gap-3 ' +
+      (active ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-700') + '">' +
+      '<span class="text-lg">' + (mem.avatar || '👤') + '</span><span class="flex-1 truncate">' + mem.name + '</span>' +
+      (active ? '<span class="text-primary-500">✓</span>' : '') + '</button>';
+  }).join('');
+  if (householdPeers && householdPeers.length) {
+    html += '<p class="px-4 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase">Домакинство</p>';
+    householdPeers.forEach(function (p) {
+      var active = viewingRemoteUid === p.uid;
+      var safeName = String(p.name || 'Член').replace(/'/g, '');
+      var av = String(p.avatar || '👤').replace(/'/g, '');
+      html += '<button type="button" onclick="switchRemoteMember(\'' + p.uid + '\',\'' + safeName + '\',\'' + av + '\')" class="w-full px-4 py-3 text-left text-sm flex items-center gap-3 ' +
+        (active ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-700') + '">' +
+        '<span class="text-lg">' + (p.avatar || '👤') + '</span><span class="flex-1 truncate">' + (p.name || 'Член') + ' <span class="text-[10px] text-slate-400">споделен</span></span>' +
+        (active ? '<span class="text-primary-500">✓</span>' : '') + '</button>';
+    });
+  }
+  list.innerHTML = html;
+}
+
+function updateMemberSwitchLabel() {
+  var el = document.getElementById('member-switch-label');
+  if (!el) return;
+  if (viewingRemoteUid) {
+    var p = householdPeers.find(function (x) { return x.uid === viewingRemoteUid; });
+    if (p) { el.textContent = (p.avatar || '👤') + ' ' + p.name; return; }
+  }
+  var mem = getCurrentMember();
+  if (mem) el.textContent = (mem.avatar ? mem.avatar + ' ' : '') + mem.name;
+}
+function switchMember(id) {
+  viewingRemoteUid = null;
+  currentMemberId = id;
+  try { localStorage.setItem('pillflow_member_' + (currentUser && currentUser.uid), id); } catch (e) {}
+  closeMemberMenu();
+  updateMemberSwitchLabel();
+  startListeners();
+  renderMeds();
+  renderToday();
+  renderCalendar();
+  if (typeof renderTakenHistory === 'function') renderTakenHistory();
+}
+
+function switchRemoteMember(uid, name, avatar) {
+  viewingRemoteUid = uid;
+  currentMemberId = 'self'; // their personal meds
+  closeMemberMenu();
+  var el = document.getElementById('member-switch-label');
+  if (el) el.textContent = (avatar || '👤') + ' ' + (name || 'Член');
+  startListeners();
+  renderMeds();
+  renderToday();
+  renderCalendar();
+}
+function selectMemberAvatar(a) {
+  _memberAvatar = a;
+  document.querySelectorAll('.member-av').forEach(function (btn) {
+    btn.classList.toggle('ring-2', btn.textContent.trim() === a);
+    btn.classList.toggle('ring-primary-500', btn.textContent.trim() === a);
+  });
+}
+function openAddMemberModal() {
+  closeMemberMenu();
+  var n = document.getElementById('member-name');
+  if (n) n.value = '';
+  var t = document.getElementById('member-type');
+  if (t) t.value = 'person';
+  _memberAvatar = '🧒';
+  selectMemberAvatar('🧒');
+  var m = document.getElementById('member-modal');
+  if (m) m.classList.remove('hidden');
+}
+function closeMemberModal() {
+  var m = document.getElementById('member-modal');
+  if (m) m.classList.add('hidden');
+}
+function saveNewMember() {
+  var nameEl = document.getElementById('member-name');
+  var name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { alert('Въведи име'); return; }
+  var typeEl = document.getElementById('member-type');
+  var type = typeEl ? typeEl.value : 'person';
+  var id = 'm_' + Date.now().toString(36);
+  var mem = { id: id, name: name, type: type, avatar: _memberAvatar || (type === 'pet' ? '🐶' : '🧒') };
+  members.push(mem);
+  persistMembers();
+  closeMemberModal();
+  switchMember(id);
+}
+function persistMembers() {
+  if (!currentUser) return;
+  try {
+    localStorage.setItem('pillflow_members_' + currentUser.uid, JSON.stringify(members));
+  } catch (e) {}
+  if (firebaseReady && db) {
+    db.collection('users').doc(currentUser.uid).collection('settings').doc('household')
+      .set({ members: members, updatedAt: new Date().toISOString() }, { merge: true })
+      .catch(function (err) { console.warn(err); });
+  }
+}
+function loadMembers() {
+  if (!currentUser) return;
+  members = [{ id: 'self', name: (profile && profile.name) || 'Аз', type: 'person', avatar: (profile && profile.avatar) || '👤' }];
+  try {
+    var saved = localStorage.getItem('pillflow_members_' + currentUser.uid);
+    if (saved) {
+      var arr = JSON.parse(saved);
+      if (Array.isArray(arr) && arr.length) {
+        // ensure self exists
+        var hasSelf = arr.some(function (m) { return m.id === 'self'; });
+        members = hasSelf ? arr : members.concat(arr.filter(function (m) { return m.id !== 'self'; }));
+      }
+    }
+    var cur = localStorage.getItem('pillflow_member_' + currentUser.uid);
+    if (cur && members.some(function (m) { return m.id === cur; })) currentMemberId = cur;
+  } catch (e) {}
+  updateMemberSwitchLabel();
+  if (firebaseReady && db) {
+    db.collection('users').doc(currentUser.uid).collection('settings').doc('household')
+      .onSnapshot(function (doc) {
+        if (doc.exists && Array.isArray(doc.data().members) && doc.data().members.length) {
+          members = doc.data().members;
+          if (!members.some(function (m) { return m.id === 'self'; })) {
+            members.unshift({ id: 'self', name: (profile && profile.name) || 'Аз', type: 'person', avatar: (profile && profile.avatar) || '👤' });
+          }
+          try { localStorage.setItem('pillflow_members_' + currentUser.uid, JSON.stringify(members)); } catch (e) {}
+          updateMemberSwitchLabel();
+        }
+      }, function () {});
+  }
 }
 
 // ==================== INIT ====================
