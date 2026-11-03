@@ -459,6 +459,13 @@
               <span id="theme-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
             </button>
           </div>
+          <div class="p-4 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-medium">Долна лента</p>
+              <p class="text-xs text-slate-400" id="nav-mode-hint">Кратка · 3 бутона</p>
+            </div>
+            <button type="button" onclick="cycleNavMode()" class="px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 text-primary-600" id="nav-mode-btn">Кратка</button>
+          </div>
           <div class="p-4 flex items-center justify-between">
             <div>
               <p class="font-medium">Точки за хапчета в календара</p>
@@ -560,21 +567,29 @@
     </main>
 
     <!-- Bottom Navigation - 3 бутона -->
-    <nav class="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 safe-bottom" style="padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);">
-      <div class="max-w-3xl mx-auto grid grid-cols-3 items-end">
-        <button onclick="switchTab('calendar')" data-tab="calendar" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <span class="text-2xl">📅</span>
-          <span class="text-xs mt-0.5 font-medium">Календар</span>
+    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 safe-bottom" style="padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);">
+      <div id="bottom-nav-inner" class="max-w-3xl mx-auto grid grid-cols-3 items-end">
+        <button type="button" id="nav-hh" onclick="menuGo('household')" data-tab="household" class="nav-btn nav-extra hidden flex flex-col items-center py-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-xl">🏠</span>
+          <span class="text-[10px] mt-0.5 font-medium">Дом</span>
         </button>
-        <button onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center -mt-5">
-          <div class="w-14 h-14 rounded-full bg-primary-500 text-white flex items-center justify-center text-2xl shadow-lg shadow-primary-500/40 ring-4 ring-white dark:ring-slate-800">
+        <button type="button" onclick="switchTab('calendar')" data-tab="calendar" class="nav-btn flex flex-col items-center py-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-xl">📅</span>
+          <span class="text-[10px] mt-0.5 font-medium">Календар</span>
+        </button>
+        <button type="button" onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center -mt-4">
+          <div class="w-12 h-12 rounded-full bg-primary-500 text-white flex items-center justify-center text-xl shadow-lg shadow-primary-500/40 ring-4 ring-white dark:ring-slate-800">
             📋
           </div>
-          <span class="text-xs mt-1 font-semibold text-primary-500">Днес</span>
+          <span class="text-[10px] mt-1 font-semibold text-primary-500">Днес</span>
         </button>
-        <button onclick="openAddMedModal()" class="nav-btn flex flex-col items-center py-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <span class="text-2xl">➕</span>
-          <span class="text-xs mt-0.5 font-medium">Добави</span>
+        <button type="button" id="nav-meds" onclick="switchTab('meds')" data-tab="meds" class="nav-btn nav-extra hidden flex flex-col items-center py-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-xl">💊</span>
+          <span class="text-[10px] mt-0.5 font-medium">Лекарства</span>
+        </button>
+        <button type="button" onclick="openAddMedModal()" class="nav-btn flex flex-col items-center py-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          <span class="text-xl">➕</span>
+          <span class="text-[10px] mt-0.5 font-medium">Добави</span>
         </button>
       </div>
     </nav>
@@ -783,10 +798,16 @@
               <option value="before">Преди него</option>
               <option value="together">Заедно / по едно и също време</option>
             </select>
-            <div id="depends-min-row" class="mt-2 flex items-center gap-2">
-              <input type="number" id="med-depends-min" min="0" max="240" value="30" placeholder="30"
+            <div id="depends-min-row" class="mt-2 flex items-center gap-2 flex-wrap">
+              <span class="text-sm text-slate-500">Изчакай</span>
+              <input type="number" id="med-depends-min" min="0" max="365" value="30" placeholder="30"
                 class="w-20 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
-              <span class="text-sm text-slate-500">минути изчакване</span>
+              <select id="med-depends-unit" class="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-2 focus:ring-primary-500 outline-none text-sm">
+                <option value="minutes">минути</option>
+                <option value="hours">часове</option>
+                <option value="days">дни</option>
+              </select>
+              <span class="text-sm text-slate-500">след него</span>
             </div>
             <p class="text-[11px] text-slate-400 mt-1">Напр. щитовидна преди кафе; антибиотик 2 ч след мляко (като отделно „лекарство“-маркер) и т.н.</p>
           </div>
