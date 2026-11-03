@@ -796,6 +796,8 @@ function enterApp() {
   applyStockToggle();
   applyCalDotsToggle();
   updateMemberSwitchLabel();
+  if (typeof applyNavMode === 'function') applyNavMode();
+  if (typeof applyTheme === 'function') applyTheme();
 }
 
 // ==================== APP MENU ====================
@@ -815,12 +817,7 @@ function menuGo(where) {
     switchTab('settings');
     if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
   } else if (where === 'household') {
-    switchTab('settings');
-    if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
-    setTimeout(function () {
-      var el = document.getElementById('household-status');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
+    switchTab('household');
   } else if (where === 'logout') {
     logout();
   }
@@ -985,9 +982,12 @@ function switchTab(tab) {
 
   updateHeaderForTab(tab);
   if (tab === 'today') {
-    // Always jump to real today, even if already on this tab with another date
-    currentDate = new Date();
-    currentDate.setHours(0, 0, 0, 0);
+    // Default: jump to real today. Calendar "open full day" sets _preserveCurrentDate
+    if (!window._preserveCurrentDate) {
+      currentDate = new Date();
+      currentDate.setHours(0, 0, 0, 0);
+    }
+    window._preserveCurrentDate = false;
     renderToday();
   }
   if (tab === 'calendar') {
@@ -2433,7 +2433,8 @@ function renderCalendar() {
 
     let total = 0, taken = 0;
     dayMeds.forEach(med => {
-      (med.times || []).forEach(t => {
+      var times = (med.times && med.times.length) ? med.times : ['morning'];
+      times.forEach(t => {
         total++;
         if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
       });
@@ -2500,6 +2501,12 @@ function selectCalendarDay(year, month, day) {
   renderCalendarDayDetail();
 }
 
+/** Open Today tab for the date already selected in the calendar (do not reset to real today) */
+function openFullDayFromCalendar() {
+  window._preserveCurrentDate = true;
+  switchTab('today');
+}
+
 function renderCalendarDayDetail() {
   const dayMeds = getMedsForDate(currentDate);
   const detail = document.getElementById('calendar-day-detail');
@@ -2513,21 +2520,23 @@ function renderCalendarDayDetail() {
   const takenNames = [];
 
   dayMeds.forEach(med => {
-    (med.times || []).forEach(t => {
+    var times = (med.times && med.times.length) ? med.times : ['morning'];
+    times.forEach(t => {
       totalCount++;
       const isTaken = isLogTaken(dayLog, med.id + '_' + t);
       if (isTaken) {
         takenCount++;
         takenNames.push(med.name + (med.dose ? ' (' + med.dose + ')' : '') + ' · ' + (timeLabel(t) || t));
       }
+      const badge = ownerBadgeHtml(med);
       html += `
         <div class="flex items-center gap-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
           <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${isTaken ? 'bg-emerald-500' : 'bg-red-400'}"></div>
           <div class="flex-1 min-w-0">
-            <p class="font-medium text-sm truncate">${med.name}</p>
-            <p class="text-xs text-slate-400">${timeLabel(t)}${med.dose ? ' · ' + med.dose : ''}</p>
+            <p class="font-medium text-sm truncate">${med.name}${badge}</p>
+            <p class="text-xs text-slate-400">${timeLabelWithClock ? timeLabelWithClock(t) : timeLabel(t)}${med.dose ? ' · ' + med.dose : ''}</p>
           </div>
-          <span class="text-xs font-medium ${isTaken ? 'text-emerald-500' : 'text-slate-400'}">${isTaken ? 'Взето' : (getLogReason(dayLog, med.id + '_' + t) ? 'Пропуск: ' + (SKIP_REASON_LABELS[getLogReason(dayLog, med.id + '_' + t)] || '') : 'Пропуснато')}</span>
+          <span class="text-xs font-medium ${isTaken ? 'text-emerald-500' : 'text-slate-400'}">${isTaken ? 'Взето' : (getLogReason(dayLog, med.id + '_' + t) ? 'Пропуск: ' + (SKIP_REASON_LABELS[getLogReason(dayLog, med.id + '_' + t)] || '') : 'Очаква')}</span>
         </div>`;
     });
   });
@@ -2564,7 +2573,7 @@ function renderCalendarDayDetail() {
     list.innerHTML = '<p class="text-sm text-slate-500">Няма медикаменти / записи за този ден</p>';
   } else {
     html += `
-      <button onclick="switchTab('today')" class="w-full mt-3 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold transition shadow-md shadow-primary-500/20">
+      <button onclick="openFullDayFromCalendar()" class="w-full mt-3 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold transition shadow-md shadow-primary-500/20">
         Отвори пълния ден →
       </button>`;
     list.innerHTML = html;
@@ -2634,7 +2643,8 @@ function renderWeekReview() {
     const dayLog = logs[dateStr] || {};
     let total = 0, taken = 0;
     dayMeds.forEach(med => {
-      (med.times || []).forEach(t => {
+      var times = (med.times && med.times.length) ? med.times : ['morning'];
+      times.forEach(t => {
         total++;
         if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
       });
@@ -2897,7 +2907,8 @@ function renderTrendsChart() {
     const dayLog = logs[formatDate(d)] || {};
     let total = 0, taken = 0;
     dayMeds.forEach(med => {
-      (med.times || []).forEach(t => {
+      var times = (med.times && med.times.length) ? med.times : ['morning'];
+      times.forEach(t => {
         total++;
         if (isLogTaken(dayLog, med.id + '_' + t)) taken++;
       });
