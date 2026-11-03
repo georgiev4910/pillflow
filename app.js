@@ -715,6 +715,71 @@ function selectAvatar(emoji) {
   });
 }
 
+function persistProfileLocal() {
+  if (!currentUser) return;
+  try {
+    localStorage.setItem('pillflow_profile_' + currentUser.uid, JSON.stringify(profile));
+  } catch (e) { console.warn(e); }
+}
+
+/** Write profile to the same settings area that already works for Max + legacy profile/main */
+function persistProfileCloud(silent) {
+  if (!firebaseReady || !db || !currentUser) return Promise.resolve();
+  var payload = Object.assign({}, profile, { updatedAt: new Date().toISOString() });
+  var uid = currentUser.uid;
+  // Keep "self" member in household members list in sync (name + avatar)
+  try {
+    var selfMem = members.find(function (m) { return m.id === 'self'; });
+    if (selfMem) {
+      selfMem.name = profile.name || selfMem.name || 'Аз';
+      selfMem.avatar = profile.avatar || selfMem.avatar || '👤';
+      if (typeof persistMembers === 'function') persistMembers();
+    }
+  } catch (e) {}
+
+  // Primary path: settings/profile (same rules area as Max members)
+  var primary = db.collection('users').doc(uid).collection('settings').doc('profile').set(payload, { merge: true });
+  // Secondary: legacy profile/main (ignore if rules block it)
+  db.collection('users').doc(uid).collection('profile').doc('main').set(payload, { merge: true }).catch(function () {});
+
+  return primary
+    .then(function () {
+      if (auth && auth.currentUser && profile.name) {
+        auth.currentUser.updateProfile({ displayName: profile.name }).catch(function () {});
+      }
+      if (householdId) {
+        var u = {};
+        u['members.' + uid + '.name'] = profile.name || 'Аз';
+        u['members.' + uid + '.avatar'] = profile.avatar || '👤';
+        db.collection('households').doc(householdId).update(u).catch(function () {});
+      }
+      if (!silent) console.log('Profile saved to cloud', profile);
+    })
+    .catch(function (err) {
+      console.error(err);
+      if (!silent) alert('Запазено на устройството. Облак: ' + (err && err.message ? err.message : err));
+    });
+}
+
+function applyCloudProfileData(data) {
+  if (!data || typeof data !== 'object') return false;
+  var defaults = { name: '', avatar: '👩', gender: 'f', weight: '', height: '', blood: '', allergies: '' };
+  // Don't overwrite richer local with empty cloud
+  var merged = Object.assign({}, defaults, profile, data);
+  // Prefer non-empty cloud fields
+  Object.keys(data).forEach(function (k) {
+    if (data[k] !== '' && data[k] != null) merged[k] = data[k];
+  });
+  profile = merged;
+  selectedAvatar = profile.avatar || '👩';
+  persistProfileLocal();
+  applyProfileToUI();
+  if (typeof renderToday === 'function') renderToday();
+  if (typeof renderProfilePage === 'function') renderProfilePage();
+  if (typeof updateMemberSwitchLabel === 'function') updateMemberSwitchLabel();
+  return true;
+}
+
 function saveProfile() {
   var nameEl = document.getElementById('profile-name');
   var name = (nameEl && nameEl.value || '').trim();
@@ -728,7 +793,6 @@ function saveProfile() {
   var bloodEl = document.getElementById('profile-blood');
   var allergiesEl = document.getElementById('profile-allergies');
 
-  // Read gender from buttons state
   var gender = profile.gender || 'f';
   var gf = document.getElementById('gender-f');
   if (gf && gf.className.indexOf('border-primary-500') >= 0) gender = 'f';
@@ -746,72 +810,63 @@ function saveProfile() {
     updatedAt: new Date().toISOString()
   };
 
-  try {
-    localStorage.setItem('pillflow_profile_' + currentUser.uid, JSON.stringify(profile));
-  } catch (e) { console.warn(e); }
-
-  currentUser.displayName = name;
+  persistProfileLocal();
+  if (currentUser) currentUser.displayName = name;
   applyProfileToUI();
   if (typeof renderToday === 'function') renderToday();
   if (typeof renderProfilePage === 'function') renderProfilePage();
   closeProfileEditModal();
-
-  if (firebaseReady && db) {
-    db.collection('users').doc(currentUser.uid).collection('profile').doc('main')
-      .set(Object.assign({}, profile), { merge: false })
-      .then(function () {
-        if (auth && auth.currentUser) {
-          auth.currentUser.updateProfile({ displayName: name }).catch(function () {});
-        }
-        console.log('Profile saved to cloud', profile);
-        if (householdId) {
-          var u = {};
-          u['members.' + currentUser.uid + '.name'] = profile.name || 'Аз';
-          u['members.' + currentUser.uid + '.avatar'] = profile.avatar || '👤';
-          db.collection('households').doc(householdId).update(u).catch(function () {});
-        }
-      })
-      .catch(function (err) {
-        console.error(err);
-        alert('Запазено на устройството. Облак: ' + err.message);
-      });
-  }
+  persistProfileCloud(false);
 }
 
 function loadProfile() {
   var defaults = { name: '', avatar: '👩', gender: 'f', weight: '', height: '', blood: '', allergies: '' };
 
-  // 1) Local first
   try {
     var saved = localStorage.getItem('pillflow_profile_' + currentUser.uid);
     if (saved) {
       profile = Object.assign({}, defaults, JSON.parse(saved));
     } else {
-      profile = Object.assign({}, defaults, { name: currentUser.displayName || '' });
+      profile = Object.assign({}, defaults, { name: (currentUser && currentUser.displayName) || '' });
     }
   } catch (e) {
-    profile = Object.assign({}, defaults, { name: currentUser.displayName || '' });
+    profile = Object.assign({}, defaults, { name: (currentUser && currentUser.displayName) || '' });
   }
   selectedAvatar = profile.avatar || '👩';
   applyProfileToUI();
 
-  // 2) Cloud overrides
-  if (firebaseReady && db) {
+  if (firebaseReady && db && currentUser) {
     if (unsubProfile) { unsubProfile(); unsubProfile = null; }
-    unsubProfile = db.collection('users').doc(currentUser.uid)
-      .collection('profile').doc('main')
-      .onSnapshot(function (doc) {
-        if (doc.exists) {
-          profile = Object.assign({}, defaults, doc.data());
-          selectedAvatar = profile.avatar || '👩';
-          try {
-            localStorage.setItem('pillflow_profile_' + currentUser.uid, JSON.stringify(profile));
-          } catch (e) {}
-          applyProfileToUI();
-          if (typeof renderToday === 'function') renderToday();
-          if (typeof renderProfilePage === 'function') renderProfilePage();
-        }
-      }, function (err) { console.error('Profile load error', err); });
+    var uid = currentUser.uid;
+    var settingsRef = db.collection('users').doc(uid).collection('settings').doc('profile');
+    var mainRef = db.collection('users').doc(uid).collection('profile').doc('main');
+
+    // Prefer settings/profile (same rules path as Max), fallback to profile/main
+    settingsRef.get().then(function (doc) {
+      if (doc.exists && doc.data()) {
+        applyCloudProfileData(doc.data());
+      } else {
+        return mainRef.get().then(function (doc2) {
+          if (doc2.exists && doc2.data()) {
+            applyCloudProfileData(doc2.data());
+            // migrate to settings/profile
+            settingsRef.set(doc2.data(), { merge: true }).catch(function () {});
+          } else if (profile && (profile.blood || profile.avatar || profile.weight)) {
+            // local has data but cloud empty after reinstall — push up
+            persistProfileCloud(true);
+          }
+        });
+      }
+    }).catch(function (err) { console.warn('profile get', err); });
+
+    unsubProfile = settingsRef.onSnapshot(function (doc) {
+      if (doc.exists && doc.data()) applyCloudProfileData(doc.data());
+    }, function (err) {
+      console.warn('settings profile listener', err);
+      unsubProfile = mainRef.onSnapshot(function (doc) {
+        if (doc.exists && doc.data()) applyCloudProfileData(doc.data());
+      }, function (e2) { console.error('Profile load error', e2); });
+    });
   }
 }
 
