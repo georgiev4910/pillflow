@@ -538,6 +538,43 @@ function selectGender(g) {
   gm.className = 'flex-1 py-2 rounded-xl border text-sm font-medium transition ' + (g === 'm' ? active : inactive);
 }
 
+
+
+function getNavMode() {
+  try { return localStorage.getItem('pillflow_nav_mode') || 'short'; } catch (e) { return 'short'; }
+}
+
+function cycleNavMode() {
+  var next = getNavMode() === 'short' ? 'expanded' : 'short';
+  try { localStorage.setItem('pillflow_nav_mode', next); } catch (e) {}
+  applyNavMode();
+}
+
+function applyNavMode() {
+  var mode = getNavMode();
+  var inner = document.getElementById('bottom-nav-inner');
+  var extras = document.querySelectorAll('.nav-extra');
+  var btn = document.getElementById('nav-mode-btn');
+  var hint = document.getElementById('nav-mode-hint');
+  if (mode === 'expanded') {
+    if (inner) {
+      inner.classList.remove('grid-cols-3');
+      inner.classList.add('grid-cols-5');
+    }
+    extras.forEach(function (el) { el.classList.remove('hidden'); });
+    if (btn) btn.textContent = 'Разширена';
+    if (hint) hint.textContent = 'Разширена · 5 бутона (Дом, Календар, Днес, Лекарства, Добави)';
+  } else {
+    if (inner) {
+      inner.classList.remove('grid-cols-5');
+      inner.classList.add('grid-cols-3');
+    }
+    extras.forEach(function (el) { el.classList.add('hidden'); });
+    if (btn) btn.textContent = 'Кратка';
+    if (hint) hint.textContent = 'Кратка · 3 бутона (Календар, Днес, Добави)';
+  }
+}
+
 function cycleTheme() {
   // cycle: system → light → dark → system
   const current = localStorage.getItem('pillflow_theme') || 'system';
@@ -1016,6 +1053,31 @@ function memberAgeLabel(birthDate) {
   } catch (e) { return birthDate; }
 }
 
+function findLastTakenDate(depMedId, beforeDate) {
+  if (!depMedId) return null;
+  var depMed = meds.find(function (m) { return m.id === depMedId; });
+  var times = (depMed && depMed.times) ? depMed.times : [];
+  var d = new Date(beforeDate || new Date());
+  d.setHours(0,0,0,0);
+  for (var i = 0; i < 400; i++) {
+    var ds = formatDate(d);
+    var dayLog = logs[ds] || {};
+    var taken = false;
+    if (times.length) {
+      times.forEach(function (t) {
+        if (isLogTaken(dayLog, depMedId + '_' + t)) taken = true;
+      });
+    } else {
+      Object.keys(dayLog).forEach(function (k) {
+        if (k.indexOf(depMedId + '_') === 0 && isLogTaken(dayLog, k)) taken = true;
+      });
+    }
+    if (taken) return new Date(d);
+    d.setDate(d.getDate() - 1);
+  }
+  return null;
+}
+
 function getMemberMeta(memberId) {
   var mid = memberId || 'self';
   var m = members.find(function (x) { return x.id === mid; });
@@ -1342,10 +1404,24 @@ function renderToday() {
   const empty = document.getElementById('today-empty');
 
   if (dayMeds.length === 0) {
+    var pre = '';
+    if (!viewingRemoteUid && currentMemberId && currentMemberId !== 'self') {
+      var cm0 = getCurrentMember();
+      if (cm0) {
+        var pinned0 = !!cm0.showOnMyCalendar;
+        pre = '<div class="mb-3 p-3 rounded-2xl border ' + (pinned0
+          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+          : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700') + ' flex items-center justify-between gap-2">' +
+          '<div class="min-w-0 text-sm"><p class="font-semibold">📌 В моя календар</p>' +
+          '<p class="text-xs text-slate-500">' + (pinned0 ? 'Виждат се и при „Аз“' : 'Изключено') + '</p></div>' +
+          '<button type="button" onclick="toggleMemberOnMyCalendar(\'' + cm0.id + '\')" class="px-3 py-1.5 rounded-xl text-xs font-bold ' +
+          (pinned0 ? 'bg-amber-500 text-white' : 'bg-white dark:bg-slate-700 border') + '">' + (pinned0 ? 'Вкл.' : 'Изкл.') + '</button></div>';
+      }
+    }
     var onlyCd = buildCountdownHtml();
-    if (onlyCd) {
+    if (pre || onlyCd) {
       empty.classList.add('hidden');
-      container.innerHTML = onlyCd;
+      container.innerHTML = pre + (onlyCd || '<p class="text-sm text-slate-400 text-center py-6">Няма хапчета за този ден</p>');
       return;
     }
     container.innerHTML = '';
@@ -1385,6 +1461,24 @@ function renderToday() {
     html += `<div class="mb-3 p-3 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-200">
       ${lowStock.map(m => `<div>🛒 <b>${m.name}</b> — остават ${m.stock} бр. (време за нова опаковка)</div>`).join('')}
     </div>`;
+  }
+
+  // Pin banner for pet/child profile
+  if (!viewingRemoteUid && currentMemberId && currentMemberId !== 'self') {
+    var cm = getCurrentMember();
+    if (cm) {
+      var pinned = !!cm.showOnMyCalendar;
+      html += '<div class="mb-3 p-3 rounded-2xl border ' + (pinned
+        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700') + ' flex items-center justify-between gap-2">' +
+        '<div class="min-w-0 text-sm"><p class="font-semibold text-slate-800 dark:text-slate-100">📌 В моя календар</p>' +
+        '<p class="text-xs text-slate-500">' + (pinned
+          ? 'Хапчетата на ' + cm.name + ' се виждат и при „Аз“'
+          : 'Включи, за да виждаш ' + cm.name + ' при своя Днес/календар') + '</p></div>' +
+        '<button type="button" onclick="toggleMemberOnMyCalendar(\'' + cm.id + '\')" class="flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold ' +
+        (pinned ? 'bg-amber-500 text-white' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600') + '">' +
+        (pinned ? 'Включено' : 'Изключено') + '</button></div>';
+    }
   }
 
   html += buildCountdownHtml();
@@ -1430,11 +1524,34 @@ function renderToday() {
           });
         }
         if (depRel === 'after') {
-          if (!anyDepTaken) {
+          var unit = med.dependsUnit || 'minutes';
+          var amt = med.dependsMin != null ? Number(med.dependsMin) : 30;
+          if (unit === 'days') {
+            var lastDep = findLastTakenDate(med.dependsOn, currentDate);
+            if (!lastDep) {
+              locked = true;
+              lockMsg = 'Първо вземи ' + (depMed ? depMed.name : 'другото');
+            } else {
+              var waitDays = amt;
+              var unlock = new Date(lastDep);
+              unlock.setDate(unlock.getDate() + waitDays);
+              unlock.setHours(0,0,0,0);
+              var today0 = new Date(currentDate);
+              today0.setHours(0,0,0,0);
+              if (today0 < unlock) {
+                locked = true;
+                var left = Math.ceil((unlock - today0) / 86400000);
+                lockMsg = (depMed ? depMed.name : 'Другото') + ' · още ' + left + ' дн. (след ' + amt + ' дни)';
+              } else {
+                lockMsg = amt + ' дни след ' + (depMed ? depMed.name : '');
+              }
+            }
+          } else if (!anyDepTaken) {
             locked = true;
             lockMsg = 'Първо вземи ' + (depMed ? depMed.name : 'другото');
           } else {
-            lockMsg = (med.dependsMin || 30) + ' мин след ' + (depMed ? depMed.name : '');
+            var unitLabel = unit === 'hours' ? 'ч' : 'мин';
+            lockMsg = amt + ' ' + unitLabel + ' след ' + (depMed ? depMed.name : '');
           }
         } else if (depRel === 'before') {
           // this med should be taken before dependsOn — no lock on this one
@@ -1777,7 +1894,7 @@ function renderMeds() {
     }
     const depMed = med.dependsOn ? meds.find(m => m.id === med.dependsOn) : null;
     const depHtml = depMed
-      ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs">${DEPENDS_REL_LABELS[med.dependsRel || 'after'] || ''} ${depMed.name}${(med.dependsRel || 'after') === 'after' ? ' (' + (med.dependsMin || 30) + ' мин)' : ''}</span>`
+      ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs">${DEPENDS_REL_LABELS[med.dependsRel || 'after'] || ''} ${depMed.name}${(med.dependsRel || 'after') === 'after' ? ' (' + (med.dependsMin || 30) + ' ' + ({minutes:'мин',hours:'ч',days:'дни'}[med.dependsUnit||'minutes']||'мин') + ')' : ''}</span>`
       : '';
 
     const paused = med.active === false && med.archived !== true;
@@ -1976,6 +2093,8 @@ function openAddMedModal() {
   document.getElementById('med-duration').value = 'lifelong';
   document.getElementById('med-duration-value').value = '';
   document.getElementById('med-depends-min').value = '30';
+  var du0 = document.getElementById('med-depends-unit');
+  if (du0) du0.value = 'minutes';
   var relN = document.getElementById('med-depends-rel');
   if (relN) relN.value = 'after';
   updateDependsMinVisibility();
@@ -2038,6 +2157,8 @@ function editMed(id) {
   document.getElementById('med-duration').value = med.durationType || (med.endDate ? 'until' : 'lifelong');
   document.getElementById('med-duration-value').value = med.durationValue || '';
   document.getElementById('med-depends-min').value = med.dependsMin || 30;
+  var du = document.getElementById('med-depends-unit');
+  if (du) du.value = med.dependsUnit || 'minutes';
   var relEl = document.getElementById('med-depends-rel');
   if (relEl) relEl.value = med.dependsRel || 'after';
   updateDependsMinVisibility();
@@ -2180,6 +2301,7 @@ function saveMed() {
     dependsOn,
     dependsRel: dependsOn ? ((document.getElementById('med-depends-rel') || {}).value || 'after') : null,
     dependsMin: dependsOn ? dependsMin : null,
+    dependsUnit: dependsOn ? ((document.getElementById('med-depends-unit') || {}).value || 'minutes') : null,
     memberId: currentMemberId || 'self',
     notify: notifyEl ? !!notifyEl.checked : false,
     notifyBefore: notifyBeforeEl ? parseInt(notifyBeforeEl.value) || 15 : 15,
@@ -3114,10 +3236,18 @@ function renderMemberMenuList() {
   if (!list) return;
   var html = members.map(function (mem) {
     var active = !viewingRemoteUid && mem.id === currentMemberId;
-    return '<button type="button" onclick="switchMember(\'' + mem.id + '\')" class="w-full px-4 py-3 text-left text-sm flex items-center gap-3 ' +
-      (active ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-700') + '">' +
+    var pin = '';
+    if (mem.id !== 'self') {
+      var on = !!mem.showOnMyCalendar;
+      pin = '<button type="button" onclick="event.stopPropagation(); toggleMemberOnMyCalendar(\'' + mem.id + '\')" class="text-[10px] px-2 py-1 rounded-lg border flex-shrink-0 ' +
+        (on ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'border-slate-200 text-slate-400') + '">' +
+        (on ? '📌 в моя' : '📌') + '</button>';
+    }
+    return '<div class="flex items-center gap-1 pr-2 ' + (active ? 'bg-primary-50 dark:bg-primary-900/30' : '') + '">' +
+      '<button type="button" onclick="switchMember(\'' + mem.id + '\')" class="flex-1 min-w-0 px-4 py-3 text-left text-sm flex items-center gap-3 ' +
+      (active ? 'text-primary-700 dark:text-primary-300 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-700') + '">' +
       '<span class="text-lg">' + (mem.avatar || '👤') + '</span><span class="flex-1 truncate">' + mem.name + '</span>' +
-      (active ? '<span class="text-primary-500">✓</span>' : '') + '</button>';
+      (active ? '<span class="text-primary-500">✓</span>' : '') + '</button>' + pin + '</div>';
   }).join('');
   if (householdPeers && householdPeers.length) {
     html += '<p class="px-4 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase">Домакинство</p>';
