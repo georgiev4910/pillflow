@@ -3150,73 +3150,161 @@ function generateDoctorReport(from, to) {
   }
   const generated = new Date();
   const name = reportPatientName();
-  const days = [];
-  let totalDoses = 0, takenDoses = 0;
+  const periodLabel = from.toLocaleDateString('bg-BG') + ' – ' + to.toLocaleDateString('bg-BG');
+
+  // Per-med stats + missed list
+  var medStats = {}; // id -> { name, dose, timesLabel, planned, taken, missed, missDetails: [] }
+  var missedByDay = []; // { display, items: [{med, slot, dose}] }
+  var totalPlanned = 0, totalTaken = 0;
 
   eachDateInRange(from, to, function (d) {
-    const dayMeds = getMedsForDate(d, { ownProfileOnly: true });
-    const dayLog = logs[formatDate(d)] || {};
-    let t = 0, tk = 0;
-    const lines = [];
+    var dayMeds = getMedsForDate(d, { ownProfileOnly: true });
+    var dayLog = logs[formatDate(d)] || {};
+    var dayMiss = [];
+    dayMeds.forEach(function (med) {
+      if (!medStats[med.id]) {
+        medStats[med.id] = {
+          name: med.name,
+          dose: med.dose || '',
+          timesLabel: ((med.times && med.times.length) ? med.times : ['morning']).map(function (t) {
+            return (typeof timeLabelWithClock === 'function' ? timeLabelWithClock(t) : timeLabel(t)) || t;
+          }).join(', '),
+          planned: 0,
+          taken: 0,
+          missed: 0
+        };
+      }
+      var times = (med.times && med.times.length) ? med.times : ['morning'];
+      times.forEach(function (slot) {
+        medStats[med.id].planned++;
+        totalPlanned++;
+        var ok = isLogTaken(dayLog, med.id + '_' + slot);
+        if (ok) {
+          medStats[med.id].taken++;
+          totalTaken++;
+        } else {
+          medStats[med.id].missed++;
+          var reason = getLogReason(dayLog, med.id + '_' + slot);
+          dayMiss.push({
+            med: med.name,
+            dose: med.dose || '',
+            slot: (typeof timeLabelWithClock === 'function' ? timeLabelWithClock(slot) : timeLabel(slot)) || slot,
+            reason: reason ? (SKIP_REASON_LABELS[reason] || reason) : ''
+          });
+        }
+      });
+    });
+    if (dayMiss.length) {
+      missedByDay.push({
+        display: d.toLocaleDateString('bg-BG', { weekday: 'short', day: 'numeric', month: 'short' }),
+        dateStr: formatDate(d),
+        items: dayMiss
+      });
+    }
+  });
+
+  var totalMissed = totalPlanned - totalTaken;
+  var pct = totalPlanned ? Math.round((totalTaken / totalPlanned) * 100) : 0;
+
+  // Active meds table with stats (only those planned in period, plus current active list)
+  var activeMeds = meds.filter(function (m) {
+    return medBelongsToCurrent(m) && m.archived !== true && m.active !== false;
+  });
+  // Prefer stats order; include active even if 0 planned
+  var medIds = Object.keys(medStats);
+  activeMeds.forEach(function (m) {
+    if (medIds.indexOf(m.id) === -1) medIds.push(m.id);
+  });
+
+  var medRows = medIds.map(function (id) {
+    var st = medStats[id];
+    var m = meds.find(function (x) { return x.id === id; });
+    if (!st && m) {
+      st = {
+        name: m.name,
+        dose: m.dose || '',
+        timesLabel: ((m.times && m.times.length) ? m.times : []).map(function (t) { return timeLabel(t); }).join(', ') || '—',
+        planned: 0, taken: 0, missed: 0
+      };
+    }
+    if (!st) return '';
+    var adherence = st.planned ? Math.round(st.taken / st.planned * 100) + '%' : '—';
+    return '<tr><td>' + st.name + '</td><td>' + (st.dose || '—') + '</td><td>' + (st.timesLabel || '—') +
+      '</td><td class="num">' + st.planned + '</td><td class="num ok">' + st.taken + '</td><td class="num miss">' + st.missed +
+      '</td><td class="num">' + adherence + '</td></tr>';
+  }).filter(Boolean).join('');
+
+  var missHtml = '';
+  if (!missedByDay.length) {
+    missHtml = '<p class="ok-msg">✓ Няма пропуснати дози в периода.</p>';
+  } else {
+    missHtml = missedByDay.map(function (day) {
+      var lines = day.items.map(function (it) {
+        return '<tr><td>' + it.slot + '</td><td><b>' + it.med + '</b>' + (it.dose ? ' · ' + it.dose : '') +
+          (it.reason ? ' <span class="reason">(' + it.reason + ')</span>' : '') + '</td></tr>';
+      }).join('');
+      return '<div class="miss-day"><div class="miss-head">' + day.display + ' · ' + day.items.length + ' пропуск' + (day.items.length === 1 ? '' : 'а') +
+        '</div><table class="inner"><tbody>' + lines + '</tbody></table></div>';
+    }).join('');
+  }
+
+  // Streak-ish: consecutive complete days ending at `to` (optional insight)
+  var completeDays = 0, daysWithPlan = 0;
+  eachDateInRange(from, to, function (d) {
+    var dayMeds = getMedsForDate(d, { ownProfileOnly: true });
+    if (!dayMeds.length) return;
+    daysWithPlan++;
+    var dayLog = logs[formatDate(d)] || {};
+    var allOk = true;
     dayMeds.forEach(function (med) {
       var times = (med.times && med.times.length) ? med.times : ['morning'];
       times.forEach(function (slot) {
-        t++;
-        const ok = isLogTaken(dayLog, med.id + '_' + slot);
-        if (ok) tk++;
-        const reason = getLogReason(dayLog, med.id + '_' + slot);
-        lines.push({ med: med.name, slot: timeLabel(slot) || slot, ok: ok, dose: med.dose || '', reason: reason });
+        if (!isLogTaken(dayLog, med.id + '_' + slot)) allOk = false;
       });
     });
-    totalDoses += t;
-    takenDoses += tk;
-    days.push({ date: formatDate(d), display: d.toLocaleDateString('bg-BG'), total: t, taken: tk, lines: lines });
+    if (allOk) completeDays++;
   });
 
-  const pct = totalDoses ? Math.round((takenDoses / totalDoses) * 100) : 0;
-  const activeMeds = meds.filter(function (m) {
-    return medBelongsToCurrent(m) && m.archived !== true && m.active !== false;
-  });
-  const medsList = activeMeds.map(function (m) {
-    const stock = (m.stock != null && m.stock !== '') ? m.stock + ' бр.' : '—';
-    return '<tr><td>' + m.name + '</td><td>' + (m.dose || '—') + '</td><td>' + ((m.times || []).map(function (t) { return timeLabel(t); }).join(', ') || '—') + '</td><td>' + stock + '</td></tr>';
-  }).join('');
-
-  const dayRows = days.filter(function (d) { return d.total > 0; }).map(function (d) {
-    const status = d.taken === d.total ? '✓' : (d.taken === 0 ? '✗' : d.taken + '/' + d.total);
-    return '<tr><td>' + d.display + '</td><td>' + status + '</td><td>' + (d.total ? Math.round(d.taken / d.total * 100) : 0) + '%</td></tr>';
-  }).join('');
-
-  const periodLabel = from.toLocaleDateString('bg-BG') + ' – ' + to.toLocaleDateString('bg-BG');
-  const html = '<!DOCTYPE html><html lang="bg"><head><meta charset="UTF-8"><title>PillFlow справка – ' + name + '</title>' +
+  var html = '<!DOCTYPE html><html lang="bg"><head><meta charset="UTF-8"><title>PillFlow справка – ' + name + '</title>' +
   '<style>' +
-  'body{font-family:system-ui,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#0f172a}' +
-  'h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:24px 0 8px;color:#0369a1}' +
-  '.meta{color:#64748b;font-size:13px;margin-bottom:20px}' +
-  'table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px}' +
-  'th,td{border:1px solid #e2e8f0;padding:8px;text-align:left}' +
-  'th{background:#f8fafc}' +
-  '.summary{display:flex;gap:12px;margin:16px 0}' +
-  '.card{flex:1;border:1px solid #e2e8f0;border-radius:12px;padding:12px;text-align:center}' +
-  '.card b{display:block;font-size:22px;color:#0284c7}' +
-  '@media print{button{display:none}}' +
+  'body{font-family:system-ui,sans-serif;max-width:800px;margin:20px auto;padding:0 14px;color:#0f172a;font-size:13px}' +
+  'h1{font-size:20px;margin:0 0 4px} h2{font-size:14px;margin:22px 0 8px;color:#0369a1;border-bottom:1px solid #e2e8f0;padding-bottom:4px}' +
+  '.meta{color:#64748b;font-size:12px;margin-bottom:14px}' +
+  'table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}' +
+  'th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left}' +
+  'th{background:#f1f5f9;font-size:11px}' +
+  'td.num{text-align:center;font-variant-numeric:tabular-nums}' +
+  'td.ok{color:#059669;font-weight:600} td.miss{color:#dc2626;font-weight:600}' +
+  '.summary{display:flex;gap:10px;margin:12px 0;flex-wrap:wrap}' +
+  '.card{flex:1;min-width:100px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;text-align:center}' +
+  '.card b{display:block;font-size:20px;color:#0284c7}' +
+  '.card span{font-size:11px;color:#64748b}' +
+  '.miss-day{margin-bottom:10px;border:1px solid #fecaca;border-radius:8px;overflow:hidden}' +
+  '.miss-head{background:#fef2f2;color:#991b1b;font-weight:600;padding:6px 10px;font-size:12px}' +
+  'table.inner{margin:0} table.inner td{border:none;border-top:1px solid #fee2e2;padding:5px 10px}' +
+  '.reason{color:#94a3b8;font-weight:400;font-size:11px}' +
+  '.ok-msg{color:#059669;font-weight:600}' +
+  '@media print{button{display:none} body{margin:0}}' +
   '</style></head><body>' +
-  '<button onclick="window.print()" style="padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:16px">Печат / Запази PDF</button>' +
-  '<h1>Справка за прием на медикаменти</h1>' +
-  '<p class="meta">Пациент: <b>' + name + '</b> · Период: <b>' + periodLabel + '</b> · Генерирано: ' + generated.toLocaleDateString('bg-BG') + ' · PillFlow</p>' +
+  '<button onclick="window.print()" style="padding:8px 14px;border-radius:8px;background:#0ea5e9;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:12px">Печат / PDF</button>' +
+  '<h1>Справка за прием</h1>' +
+  '<p class="meta">Профил: <b>' + name + '</b> · Период: <b>' + periodLabel + '</b> · Генерирано: ' + generated.toLocaleDateString('bg-BG') + ' · PillFlow</p>' +
   '<div class="summary">' +
-  '<div class="card"><b>' + pct + '%</b>спазване</div>' +
-  '<div class="card"><b>' + takenDoses + '</b>взети дози</div>' +
-  '<div class="card"><b>' + (totalDoses - takenDoses) + '</b>пропуски</div>' +
+  '<div class="card"><b>' + pct + '%</b><span>спазване</span></div>' +
+  '<div class="card"><b>' + totalTaken + '</b><span>взети дози</span></div>' +
+  '<div class="card"><b>' + totalMissed + '</b><span>пропуски</span></div>' +
+  '<div class="card"><b>' + completeDays + '/' + daysWithPlan + '</b><span>пълни дни</span></div>' +
   '</div>' +
-  '<h2>Медикаменти</h2>' +
-  '<table><thead><tr><th>Име</th><th>Доза</th><th>Време</th><th>Наличност</th></tr></thead><tbody>' + (medsList || '<tr><td colspan=4>Няма</td></tr>') + '</tbody></table>' +
-  '<h2>Дневен преглед</h2>' +
-  '<table><thead><tr><th>Дата</th><th>Статус</th><th>%</th></tr></thead><tbody>' + (dayRows || '<tr><td colspan=3>Няма данни</td></tr>') + '</tbody></table>' +
-  '<p class="meta">Информативна справка от PillFlow. Не замества медицинска документация.</p>' +
+  '<h2>По медикамент (в периода)</h2>' +
+  '<table><thead><tr><th>Име</th><th>Доза</th><th>График</th><th>Планирани</th><th>Взети</th><th>Пропуски</th><th>%</th></tr></thead><tbody>' +
+  (medRows || '<tr><td colspan="7">Няма данни</td></tr>') + '</tbody></table>' +
+  '<h2>Само пропуски по дни</h2>' +
+  '<p class="meta" style="margin-top:-4px">Показват се само дни с поне една невзета доза.</p>' +
+  missHtml +
+  '<p class="meta" style="margin-top:20px">Информативна справка от PillFlow. Не замества медицинска документация.</p>' +
   '</body></html>';
 
-  const w = window.open('', '_blank');
+  var w = window.open('', '_blank');
   if (!w) { alert('Разреши pop-up за справката'); return; }
   w.document.write(html);
   w.document.close();
@@ -3234,7 +3322,6 @@ function generatePrintPlanner(from, to) {
   eachDateInRange(from, to, function (d) {
     var dayMeds = getMedsForDate(d, { ownProfileOnly: true });
     if (!dayMeds.length) return;
-    // group by time
     var byTime = {};
     dayMeds.forEach(function (med) {
       var times = (med.times && med.times.length) ? med.times : ['morning'];
@@ -3248,45 +3335,45 @@ function generatePrintPlanner(from, to) {
     ordered.forEach(function (slot) {
       byTime[slot].forEach(function (med) {
         var label = (typeof timeLabelWithClock === 'function' ? timeLabelWithClock(slot) : timeLabel(slot)) || slot;
-        rows += '<tr>' +
-          '<td class="cb">☐</td>' +
-          '<td class="time">' + label + '</td>' +
-          '<td><b>' + med.name + '</b>' + (med.dose ? ' <span class="dose">' + med.dose + '</span>' : '') +
-          (med.condition ? '<div class="note">' + (CONDITION_LABELS[med.condition] || med.condition) + '</div>' : '') +
-          '</td></tr>';
+        // compact: time | name dose | small note
+        var note = med.condition ? (CONDITION_LABELS[med.condition] || '') : '';
+        rows += '<tr><td class="t">' + label + '</td><td class="m">' + med.name +
+          (med.dose ? ' <span class="d">' + med.dose + '</span>' : '') +
+          (note ? ' <span class="n">' + note + '</span>' : '') +
+          '</td><td class="c">☐</td></tr>';
       });
     });
-    var display = d.toLocaleDateString('bg-BG', { weekday: 'long', day: 'numeric', month: 'long' });
+    var display = d.toLocaleDateString('bg-BG', { weekday: 'short', day: 'numeric', month: 'numeric' });
     dayBlocks.push(
-      '<div class="day">' +
-      '<div class="day-head">' + display + '</div>' +
-      '<table><thead><tr><th style="width:28px"></th><th style="width:90px">Час</th><th>Лекарство</th></tr></thead><tbody>' +
-      rows + '</tbody></table></div>'
+      '<div class="day"><div class="dh">' + display + '</div>' +
+      '<table><tbody>' + rows + '</tbody></table></div>'
     );
   });
 
   var periodLabel = from.toLocaleDateString('bg-BG') + ' – ' + to.toLocaleDateString('bg-BG');
   var html = '<!DOCTYPE html><html lang="bg"><head><meta charset="UTF-8"><title>PillFlow планер – ' + name + '</title>' +
   '<style>' +
-  'body{font-family:system-ui,sans-serif;max-width:720px;margin:20px auto;padding:0 12px;color:#0f172a}' +
-  'h1{font-size:20px;margin:0 0 4px}' +
-  '.meta{color:#64748b;font-size:12px;margin-bottom:16px}' +
-  '.day{break-inside:avoid;page-break-inside:avoid;margin-bottom:18px;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden}' +
-  '.day-head{background:#0ea5e9;color:#fff;font-weight:700;padding:8px 12px;font-size:14px;text-transform:capitalize}' +
-  'table{width:100%;border-collapse:collapse;font-size:13px}' +
-  'th,td{border-top:1px solid #e2e8f0;padding:10px 8px;text-align:left;vertical-align:middle}' +
-  'th{background:#f8fafc;font-size:11px;color:#64748b}' +
-  '.cb{font-size:18px;width:28px;text-align:center;color:#94a3b8}' +
-  '.time{color:#0369a1;font-weight:600;white-space:nowrap}' +
-  '.dose{color:#64748b;font-weight:400}' +
-  '.note{font-size:11px;color:#94a3b8;margin-top:2px}' +
-  '@media print{button{display:none} body{margin:0;max-width:none} .day{border-color:#94a3b8}}' +
+  '@page{margin:8mm}' +
+  'body{font-family:system-ui,sans-serif;margin:0;padding:8px;color:#0f172a;font-size:10px}' +
+  'h1{font-size:14px;margin:0 0 2px}' +
+  '.meta{color:#64748b;font-size:9px;margin:0 0 8px}' +
+  '.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}' +
+  '.day{border:1px solid #94a3b8;border-radius:4px;overflow:hidden;break-inside:avoid;page-break-inside:avoid}' +
+  '.dh{background:#0369a1;color:#fff;font-weight:700;padding:3px 6px;font-size:10px;text-transform:capitalize}' +
+  'table{width:100%;border-collapse:collapse}' +
+  'td{border-top:1px solid #e2e8f0;padding:2px 4px;vertical-align:top;line-height:1.25}' +
+  'td.t{width:52px;white-space:nowrap;color:#0c4a6e;font-weight:600;font-size:9px}' +
+  'td.m{font-size:9.5px} td.c{width:14px;text-align:center;color:#94a3b8;font-size:11px}' +
+  '.d{color:#64748b;font-weight:400} .n{color:#94a3b8;font-size:8px}' +
+  '@media print{button{display:none} body{padding:0} .day{border-color:#64748b}}' +
+  '@media (max-width:600px){.grid{grid-template-columns:1fr}}' +
   '</style></head><body>' +
-  '<button onclick="window.print()" style="padding:10px 16px;border-radius:8px;background:#7c3aed;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:16px">Печат / Запази PDF</button>' +
-  '<h1>📋 Планер – ' + name + '</h1>' +
-  '<p class="meta">Период: <b>' + periodLabel + '</b> · Генерирано: ' + generated.toLocaleDateString('bg-BG') + ' · PillFlow</p>' +
-  (dayBlocks.length ? dayBlocks.join('') : '<p>Няма планирани хапчета в този период.</p>') +
-  '<p class="meta" style="margin-top:24px">Отбелязвай на хартия ☐ → ☑. За синхронизация с приложението отвори PillFlow.</p>' +
+  '<button onclick="window.print()" style="padding:6px 12px;border-radius:6px;background:#7c3aed;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:8px;font-size:12px">Печат / PDF</button>' +
+  '<h1>Планер · ' + name + '</h1>' +
+  '<p class="meta">' + periodLabel + ' · ' + generated.toLocaleDateString('bg-BG') + ' · PillFlow</p>' +
+  (dayBlocks.length
+    ? '<div class="grid">' + dayBlocks.join('') + '</div>'
+    : '<p>Няма планирани хапчета в периода.</p>') +
   '</body></html>';
 
   var w = window.open('', '_blank');
@@ -3294,10 +3381,6 @@ function generatePrintPlanner(from, to) {
   w.document.write(html);
   w.document.close();
 }
-
-
-
-
 
 
 // ==================== HOUSEHOLD (shared profiles) ====================
