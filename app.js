@@ -550,6 +550,40 @@ function cycleNavMode() {
   applyNavMode();
 }
 
+function isTakenHistoryEnabled() {
+  try {
+    var v = localStorage.getItem('pillflow_taken_history');
+    if (v === null || v === undefined) return true; // default on
+    return v === '1';
+  } catch (e) { return true; }
+}
+
+function toggleTakenHistorySetting() {
+  var on = !isTakenHistoryEnabled();
+  try { localStorage.setItem('pillflow_taken_history', on ? '1' : '0'); } catch (e) {}
+  applyTakenHistorySetting();
+}
+
+function applyTakenHistorySetting() {
+  var on = isTakenHistoryEnabled();
+  var sec = document.getElementById('taken-history-section');
+  if (sec) sec.classList.toggle('hidden', !on);
+  var tog = document.getElementById('taken-history-toggle');
+  var knob = document.getElementById('taken-history-knob');
+  if (tog && knob) {
+    if (on) {
+      tog.classList.add('bg-primary-500');
+      tog.classList.remove('bg-slate-200', 'dark:bg-slate-600');
+      knob.style.transform = 'translateX(20px)';
+    } else {
+      tog.classList.remove('bg-primary-500');
+      tog.classList.add('bg-slate-200', 'dark:bg-slate-600');
+      knob.style.transform = 'translateX(0)';
+    }
+  }
+  if (on && typeof renderTakenHistory === 'function') renderTakenHistory();
+}
+
 function applyNavMode() {
   var mode = getNavMode();
   var inner = document.getElementById('bottom-nav-inner');
@@ -798,6 +832,7 @@ function enterApp() {
   updateMemberSwitchLabel();
   if (typeof applyNavMode === 'function') applyNavMode();
   if (typeof applyTheme === 'function') applyTheme();
+  if (typeof applyTakenHistorySetting === 'function') applyTakenHistorySetting();
 }
 
 // ==================== APP MENU ====================
@@ -1008,6 +1043,7 @@ function switchTab(tab) {
     applyCalDotsToggle();
     applyStockToggle();
     if (typeof applyNavMode === 'function') applyNavMode();
+    if (typeof applyTakenHistorySetting === 'function') applyTakenHistorySetting();
   }
   var menu = document.getElementById('app-menu');
   if (menu) menu.classList.add('hidden');
@@ -1170,7 +1206,16 @@ function getCountdownMeds() {
     if (!med.showCountdown) return false;
     if (med.active === false || med.archived === true) return false;
     if (viewingRemoteUid) return true;
-    return medBelongsToCurrent(med);
+    var mid = med.memberId || 'self';
+    var meta = getMemberMeta(mid);
+    // Member-level master switch for countdowns (default on)
+    if (mid !== 'self' && meta && meta.showCountdowns === false) return false;
+    if (medBelongsToCurrent(med)) return true;
+    // On owner "self": show other members' countdowns only if they pin + allow on my profile
+    if (!viewingRemoteUid && currentMemberId === 'self' && mid !== 'self') {
+      if (meta && meta.showCountdownOnMyProfile) return true;
+    }
+    return false;
   });
 }
 
@@ -1514,12 +1559,25 @@ function renderToday() {
     var cm = getCurrentMember();
     if (cm) {
       var pinned = !!cm.showOnMyCalendar;
-      html += '<div class="mb-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 flex items-center justify-between gap-3">' +
+      var cdOn = cm.showCountdowns !== false;
+      var cdMine = !!cm.showCountdownOnMyProfile;
+      html += '<div class="mb-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 space-y-3">' +
+        '<div class="flex items-center justify-between gap-3">' +
         '<div class="min-w-0 text-sm"><p class="font-semibold text-slate-800 dark:text-slate-100">📌 В моя календар</p>' +
         '<p class="text-xs text-slate-500">' + (pinned
           ? 'Хапчетата на ' + cm.name + ' се виждат и при „Аз“'
           : 'Скрити от основния ти Днес / календар') + '</p></div>' +
-        pinToggleHtml(cm.id, pinned) + '</div>';
+        pinToggleHtml(cm.id, pinned) + '</div>' +
+        '<div class="flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-700 pt-3">' +
+        '<div class="min-w-0 text-sm"><p class="font-semibold text-slate-800 dark:text-slate-100">⏳ Обратно броене</p>' +
+        '<p class="text-xs text-slate-500">' + (cdOn ? 'Показва се в профила на ' + cm.name : 'Скрито в този профил') + '</p></div>' +
+        '<button type="button" onclick="toggleMemberShowCountdowns(\'' + cm.id + '\')" class="relative w-12 h-7 flex-shrink-0 rounded-full transition ' + (cdOn ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '">' +
+        '<span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform" style="transform:' + (cdOn ? 'translateX(20px)' : 'translateX(0)') + '"></span></button></div>' +
+        '<div class="flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-700 pt-3">' +
+        '<div class="min-w-0 text-sm"><p class="font-semibold text-slate-800 dark:text-slate-100">⏳ И при „Аз“</p>' +
+        '<p class="text-xs text-slate-500">' + (cdMine ? 'Countdown на ' + cm.name + ' се вижда и при теб' : 'Само в профила на ' + cm.name) + '</p></div>' +
+        '<button type="button" onclick="toggleMemberCountdownOnMyProfile(\'' + cm.id + '\')" class="relative w-12 h-7 flex-shrink-0 rounded-full transition ' + (cdMine ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '">' +
+        '<span class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform" style="transform:' + (cdMine ? 'translateX(20px)' : 'translateX(0)') + '"></span></button></div></div>';
     }
   }
 
@@ -2481,12 +2539,28 @@ function renderCalendar() {
     const isToday = isSameDay(date, today);
     const isSelected = isSameDay(date, currentDate);
 
+    // Small avatars for other members' meds when viewing "Аз"
+    var memberIcons = '';
+    if (!viewingRemoteUid && currentMemberId === 'self' && total > 0) {
+      var seen = {};
+      dayMeds.forEach(function (med) {
+        var mid = med.memberId || 'self';
+        if (mid === 'self' || seen[mid]) return;
+        seen[mid] = true;
+        var meta = getMemberMeta(mid);
+        memberIcons += '<span class="text-[10px] leading-none" title="' + (meta.name || '') + '">' + (meta.avatar || '🐾') + '</span>';
+      });
+    }
+
     html += `
       <div onclick="selectCalendarDay(${year}, ${month}, ${d})"
         class="bg-white dark:bg-slate-800 p-1.5 min-h-[56px] cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition ${statusClass}
           ${isToday ? 'ring-2 ring-inset ring-primary-500' : ''}
           ${isSelected ? 'bg-primary-50 dark:bg-primary-900/30' : ''}">
-        <div class="text-sm font-medium ${isToday ? 'text-primary-600' : ''}">${d}</div>
+        <div class="text-sm font-medium ${isToday ? 'text-primary-600' : ''} flex items-center justify-between gap-0.5">
+          <span>${d}</span>
+          <span class="flex gap-0.5">${memberIcons}</span>
+        </div>
         <div class="mt-1 flex flex-wrap justify-center gap-0.5">${dot}</div>
       </div>`;
   }
@@ -2582,6 +2656,11 @@ function renderCalendarDayDetail() {
 }
 
 function renderTakenHistory() {
+  if (typeof isTakenHistoryEnabled === 'function' && !isTakenHistoryEnabled()) {
+    var sec = document.getElementById('taken-history-section');
+    if (sec) sec.classList.add('hidden');
+    return;
+  }
   const el = document.getElementById('taken-history');
   if (!el) return;
 
@@ -2632,12 +2711,26 @@ function renderWeekReview() {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  // Monday–Sunday of the current week (Mon = start)
+  const day = today.getDay(); // 0 Sun .. 6 Sat
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + mondayOffset);
+  monday.setHours(0, 0, 0, 0);
+
+  var sub = document.getElementById('week-review-sub');
+  if (sub) {
+    var sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sub.textContent = 'Пон ' + monday.getDate() + ' – Нед ' + sunday.getDate() + '.' + (sunday.getMonth() + 1);
+  }
+
   let perfect = 0, partial = 0, missed = 0, empty = 0;
   const days = [];
 
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
     const dayMeds = getMedsForDate(d);
     const dateStr = formatDate(d);
     const dayLog = logs[dateStr] || {};
@@ -2662,9 +2755,10 @@ function renderWeekReview() {
       missed: 'bg-red-400',
       empty: 'bg-slate-200 dark:bg-slate-600'
     };
+    const isTodayCell = isSameDay(d, today);
     days.push(`<div class="flex flex-col items-center gap-1">
-      <div class="w-8 h-8 rounded-full ${colors[status]} flex items-center justify-center text-white text-xs font-bold">${taken || ''}</div>
-      <span class="text-[10px] text-slate-400">${label}</span>
+      <div class="w-8 h-8 rounded-full ${colors[status]} flex items-center justify-center text-white text-xs font-bold ${isTodayCell ? 'ring-2 ring-primary-400 ring-offset-1 dark:ring-offset-slate-900' : ''}">${taken || ''}</div>
+      <span class="text-[10px] ${isTodayCell ? 'text-primary-500 font-semibold' : 'text-slate-400'}">${label}</span>
     </div>`);
   }
 
@@ -3028,16 +3122,24 @@ function renderHouseholdSettings() {
           '<p class="text-[11px] text-slate-400">Ти (основен профил)</p></div></div>';
       }
       var on = !!mem.showOnMyCalendar;
-      return '<div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40">' +
+      var cdOn = mem.showCountdowns !== false;
+      var cdMine = !!mem.showCountdownOnMyProfile;
+      return '<div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 space-y-2">' +
+        '<div class="flex items-center gap-3">' +
         '<span class="text-xl">' + (mem.avatar || '👤') + '</span>' +
         '<div class="flex-1 min-w-0">' +
         '<p class="text-sm font-semibold truncate">' + mem.name + '</p>' +
         '<p class="text-[11px] text-slate-400">' + (mem.type === 'pet' ? 'Любимец' : 'Профил') +
-        (mem.breed ? ' · ' + mem.breed : '') + '</p>' +
-        '<div class="mt-2 flex items-center justify-between gap-2">' +
-        '<span class="text-[11px] text-slate-500">В моя календар</span>' +
-        pinToggleHtml(mem.id, on, 'sm') + '</div></div>' +
-        '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-xs text-primary-500 px-2 py-1">✎</button></div>';
+        (mem.breed ? ' · ' + mem.breed : '') + '</p></div>' +
+        '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-xs text-primary-500 px-2 py-1">✎</button></div>' +
+        '<div class="flex items-center justify-between gap-2 pl-1">' +
+        '<span class="text-[11px] text-slate-500">📌 В моя календар</span>' + pinToggleHtml(mem.id, on, 'sm') + '</div>' +
+        '<div class="flex items-center justify-between gap-2 pl-1">' +
+        '<span class="text-[11px] text-slate-500">⏳ Обратно броене тук</span>' +
+        '<button type="button" onclick="toggleMemberShowCountdowns(\'' + mem.id + '\')" class="relative w-11 h-6 flex-shrink-0 rounded-full transition ' + (cdOn ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform:' + (cdOn ? 'translateX(18px)' : 'translateX(0)') + '"></span></button></div>' +
+        '<div class="flex items-center justify-between gap-2 pl-1">' +
+        '<span class="text-[11px] text-slate-500">⏳ Countdown и при „Аз“</span>' +
+        '<button type="button" onclick="toggleMemberCountdownOnMyProfile(\'' + mem.id + '\')" class="relative w-11 h-6 flex-shrink-0 rounded-full transition ' + (cdMine ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform:' + (cdMine ? 'translateX(18px)' : 'translateX(0)') + '"></span></button></div></div>';
     }).join('');
   }
   var status = document.getElementById('household-status');
@@ -3476,6 +3578,26 @@ function toggleMemberOnMyCalendar(memberId) {
   renderMemberMenuList();
   if (typeof renderToday === 'function') renderToday();
   if (typeof renderCalendar === 'function') renderCalendar();
+}
+
+function toggleMemberShowCountdowns(memberId) {
+  var m = members.find(function (x) { return x.id === memberId; });
+  if (!m || m.id === 'self') return;
+  // default true when undefined
+  var currentlyOn = m.showCountdowns !== false;
+  m.showCountdowns = !currentlyOn;
+  persistMembers();
+  renderHouseholdSettings();
+  if (typeof renderToday === 'function') renderToday();
+}
+
+function toggleMemberCountdownOnMyProfile(memberId) {
+  var m = members.find(function (x) { return x.id === memberId; });
+  if (!m || m.id === 'self') return;
+  m.showCountdownOnMyProfile = !m.showCountdownOnMyProfile;
+  persistMembers();
+  renderHouseholdSettings();
+  if (typeof renderToday === 'function') renderToday();
 }
 
 function openEditMember(memberId) {
