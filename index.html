@@ -340,7 +340,7 @@
           <div id="calendar-day-list" class="space-y-2"></div>
         </div>
 
-        <div class="mt-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
+        <div id="taken-history-section" class="mt-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
           <h3 class="font-bold mb-1">Последно взети</h3>
           <p class="text-xs text-slate-400 mb-3">От логовете — какво си отбелязал/а</p>
           <div id="taken-history" class="space-y-2 text-sm max-h-64 overflow-y-auto"></div>
@@ -349,7 +349,7 @@
         <!-- Седмичен преглед под календара -->
         <div class="mt-6">
           <h3 class="font-bold mb-1">Седмичен преглед</h3>
-          <p class="text-xs text-slate-400 mb-3">Последните 7 дни</p>
+          <p class="text-xs text-slate-400 mb-3" id="week-review-sub">Понеделник – неделя</p>
           <div id="week-review" class="space-y-2 text-sm"></div>
         </div>
 
@@ -514,7 +514,16 @@
               <span id="cal-dots-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
             </button>
           </div>
-          <div class="p-4 flex items-center justify-between">
+                    <div class="p-4 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-medium">Последно взети</p>
+              <p class="text-xs text-slate-400">Секция в таб Календар</p>
+            </div>
+            <button type="button" id="taken-history-toggle" onclick="toggleTakenHistorySetting()" class="relative w-12 h-7 flex-shrink-0 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+              <span id="taken-history-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+            </button>
+          </div>
+<div class="p-4 flex items-center justify-between">
             <div>
               <p class="font-medium">Следене на наличност</p>
               <p class="text-xs text-slate-400">Брой таблетки и напомняне за купуване</p>
