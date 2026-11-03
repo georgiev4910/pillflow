@@ -246,6 +246,7 @@
                   <div class="min-w-0">
                     <p class="text-white/90 text-base" id="today-greeting">Добро утро</p>
                     <h2 class="text-2xl tracking-tight leading-tight truncate" id="today-name">—</h2>
+                    <p id="hero-member-extra" class="hidden text-sm text-white/75 mt-0.5"></p>
                   </div>
                 </div>
               </div>
@@ -511,24 +512,34 @@
           </button>
         </div>
 
-        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-3">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-4">
           <div>
-            <h3 class="font-bold">Домакинство</h3>
-            <p class="text-xs text-slate-400 mt-0.5">Споделени профили — виждате и отбелязвате хапчета един за друг (напр. Макс, или взаимен напомняне).</p>
+            <h3 class="font-bold text-base">🏠 Домакинство</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Профили вкъщи + споделяне с друг акаунт</p>
           </div>
-          <div id="household-status" class="text-sm text-slate-500">Не си в домакинство.</div>
-          <div id="household-actions" class="flex flex-col gap-2">
-            <button type="button" onclick="createHousehold()" class="w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold">Създай домакинство</button>
-            <button type="button" onclick="promptJoinHousehold()" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-medium">Присъедини се с код</button>
+
+          <div>
+            <p class="text-xs font-semibold text-slate-400 uppercase mb-2">Локални профили</p>
+            <div id="household-members-list" class="space-y-2"></div>
+            <button type="button" onclick="openAddMemberModal()" class="mt-2 w-full py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-sm text-primary-600 font-medium">+ Добави човек / любимец</button>
           </div>
-          <div class="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-700">
-            <div>
-              <p class="text-sm font-medium">Сподели моите лекарства</p>
-              <p class="text-xs text-slate-400">Другите в домакинството виждат „Аз“ и могат да отбелязват</p>
+
+          <div class="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-3">
+            <p class="text-xs font-semibold text-slate-400 uppercase">Споделено с друг акаунт</p>
+            <div id="household-status" class="text-sm text-slate-500">Не си в споделено домакинство.</div>
+            <div id="household-actions" class="flex flex-col gap-2">
+              <button type="button" onclick="createHousehold()" class="w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold">Създай код за покана</button>
+              <button type="button" onclick="promptJoinHousehold()" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-medium">Присъедини се с код</button>
             </div>
-            <button type="button" id="share-household-toggle" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 rounded-full bg-slate-200 dark:bg-slate-600 transition">
-              <span id="share-household-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
-            </button>
+            <div class="flex items-center justify-between">
+              <div class="min-w-0 pr-2">
+                <p class="text-sm font-medium">Моят акаунт е споделен</p>
+                <p class="text-xs text-slate-400">Другите виждат хапчетата ми и могат да отбелязват</p>
+              </div>
+              <button type="button" id="share-household-toggle" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 flex-shrink-0 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+                <span id="share-household-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -672,15 +683,15 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium mb-1.5">Кога се взема *</label>
-          <p class="text-xs text-slate-400 mb-2">Бърз избор или ръчно по-долу</p>
+          <label class="block text-sm font-medium mb-1.5">Кога през деня *</label>
+          <p class="text-xs text-slate-400 mb-2">Избери <b>едно или повече</b> времена — всяко е отделен прием. Пример: сутрин + вечер = 2 пъти дневно.</p>
           <div class="flex flex-wrap gap-2 mb-3">
-            <button type="button" onclick="applyDoseTemplate(1)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">1× на ден</button>
-            <button type="button" onclick="applyDoseTemplate(2)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">2× на ден</button>
-            <button type="button" onclick="applyDoseTemplate(3)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">3× на ден</button>
-            <button type="button" onclick="applyDoseTemplate(4)" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">4× на ден</button>
+            <button type="button" onclick="applyPeriodTemplate(['morning'])" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">Само сутрин</button>
+            <button type="button" onclick="applyPeriodTemplate(['evening'])" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">Само вечер</button>
+            <button type="button" onclick="applyPeriodTemplate(['morning','evening'])" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">Сутрин + вечер</button>
+            <button type="button" onclick="applyPeriodTemplate(['morning','noon','evening'])" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 hover:border-primary-400 hover:text-primary-600">3× (С / О / В)</button>
           </div>
-          <p class="text-xs text-slate-400 mb-2">Периоди и/или точни часове</p>
+          <p class="text-xs text-slate-400 mb-2">Или отметни ръчно / добави точен час</p>
           <div class="flex flex-wrap gap-2 mb-3" id="time-slots">
             <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700">
               <input type="checkbox" value="morning" class="time-check rounded text-primary-500"> Сутрин
@@ -906,7 +917,7 @@
       </div>
       <div class="flex gap-2">
         <button type="button" onclick="closeMemberModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600">Отказ</button>
-        <button type="button" onclick="saveNewMember()" class="flex-1 py-2.5 rounded-xl bg-primary-500 text-white font-semibold">Добави</button>
+        <button type="button" onclick="saveMemberFromModal()" class="flex-1 py-2.5 rounded-xl bg-primary-500 text-white font-semibold">Добави</button>
       </div>
     </div>
   </div>
@@ -960,7 +971,7 @@
       </div>
       <div class="flex gap-2">
         <button type="button" onclick="closeMemberModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600">Отказ</button>
-        <button type="button" onclick="saveNewMember()" class="flex-1 py-2.5 rounded-xl bg-primary-500 text-white font-semibold">Добави</button>
+        <button type="button" onclick="saveMemberFromModal()" class="flex-1 py-2.5 rounded-xl bg-primary-500 text-white font-semibold">Добави</button>
       </div>
     </div>
   </div>
