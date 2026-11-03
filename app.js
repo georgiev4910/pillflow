@@ -984,7 +984,12 @@ function switchTab(tab) {
   }
 
   updateHeaderForTab(tab);
-  if (tab === 'today') renderToday();
+  if (tab === 'today') {
+    // Always jump to real today, even if already on this tab with another date
+    currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+    renderToday();
+  }
   if (tab === 'calendar') {
     renderCalendar();
     renderWeekReview();
@@ -1197,6 +1202,12 @@ function changeDay(delta) {
 function goToToday() {
   currentDate = new Date();
   currentDate.setHours(0, 0, 0, 0);
+  // Ensure Today tab is visible
+  var tab = document.getElementById('tab-today');
+  if (tab && !tab.classList.contains('active')) {
+    switchTab('today');
+    return;
+  }
   renderToday();
 }
 
@@ -1447,13 +1458,10 @@ function renderToday() {
       var cm0 = getCurrentMember();
       if (cm0) {
         var pinned0 = !!cm0.showOnMyCalendar;
-        pre = '<div class="mb-3 p-3 rounded-2xl border ' + (pinned0
-          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-          : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700') + ' flex items-center justify-between gap-2">' +
-          '<div class="min-w-0 text-sm"><p class="font-semibold">📌 В моя календар</p>' +
-          '<p class="text-xs text-slate-500">' + (pinned0 ? 'Виждат се и при „Аз“' : 'Изключено') + '</p></div>' +
-          '<button type="button" onclick="toggleMemberOnMyCalendar(\'' + cm0.id + '\')" class="px-3 py-1.5 rounded-xl text-xs font-bold ' +
-          (pinned0 ? 'bg-amber-500 text-white' : 'bg-white dark:bg-slate-700 border') + '">' + (pinned0 ? 'Вкл.' : 'Изкл.') + '</button></div>';
+        pre = '<div class="mb-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 flex items-center justify-between gap-3">' +
+          '<div class="min-w-0 text-sm"><p class="font-semibold text-slate-800 dark:text-slate-100">📌 В моя календар</p>' +
+          '<p class="text-xs text-slate-500">' + (pinned0 ? 'Хапчетата се виждат и при „Аз“' : 'Скрити от основния ти изглед') + '</p></div>' +
+          pinToggleHtml(cm0.id, pinned0) + '</div>';
       }
     }
     var onlyCd = buildCountdownHtml();
@@ -1506,16 +1514,12 @@ function renderToday() {
     var cm = getCurrentMember();
     if (cm) {
       var pinned = !!cm.showOnMyCalendar;
-      html += '<div class="mb-3 p-3 rounded-2xl border ' + (pinned
-        ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
-        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700') + ' flex items-center justify-between gap-2">' +
+      html += '<div class="mb-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 flex items-center justify-between gap-3">' +
         '<div class="min-w-0 text-sm"><p class="font-semibold text-slate-800 dark:text-slate-100">📌 В моя календар</p>' +
         '<p class="text-xs text-slate-500">' + (pinned
           ? 'Хапчетата на ' + cm.name + ' се виждат и при „Аз“'
-          : 'Включи, за да виждаш ' + cm.name + ' при своя Днес/календар') + '</p></div>' +
-        '<button type="button" onclick="toggleMemberOnMyCalendar(\'' + cm.id + '\')" class="flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold ' +
-        (pinned ? 'bg-amber-500 text-white' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600') + '">' +
-        (pinned ? 'Включено' : 'Изключено') + '</button></div>';
+          : 'Скрити от основния ти Днес / календар') + '</p></div>' +
+        pinToggleHtml(cm.id, pinned) + '</div>';
     }
   }
 
@@ -3013,15 +3017,15 @@ function renderHouseholdSettings() {
           '<p class="text-[11px] text-slate-400">Ти (основен профил)</p></div></div>';
       }
       var on = !!mem.showOnMyCalendar;
-      return '<div class="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/40">' +
+      return '<div class="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40">' +
         '<span class="text-xl">' + (mem.avatar || '👤') + '</span>' +
         '<div class="flex-1 min-w-0">' +
         '<p class="text-sm font-semibold truncate">' + mem.name + '</p>' +
         '<p class="text-[11px] text-slate-400">' + (mem.type === 'pet' ? 'Любимец' : 'Профил') +
         (mem.breed ? ' · ' + mem.breed : '') + '</p>' +
-        '<label class="mt-1 flex items-center gap-2 text-[11px] text-slate-500 cursor-pointer">' +
-        '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleMemberOnMyCalendar(\'' + mem.id + '\')" class="rounded text-primary-500">' +
-        'Показвай в моя календар / Днес</label></div>' +
+        '<div class="mt-2 flex items-center justify-between gap-2">' +
+        '<span class="text-[11px] text-slate-500">В моя календар</span>' +
+        pinToggleHtml(mem.id, on, 'sm') + '</div></div>' +
         '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-xs text-primary-500 px-2 py-1">✎</button></div>';
     }).join('');
   }
@@ -3277,9 +3281,7 @@ function renderMemberMenuList() {
     var pin = '';
     if (mem.id !== 'self') {
       var on = !!mem.showOnMyCalendar;
-      pin = '<button type="button" onclick="event.stopPropagation(); toggleMemberOnMyCalendar(\'' + mem.id + '\')" class="text-[10px] px-2 py-1 rounded-lg border flex-shrink-0 ' +
-        (on ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'border-slate-200 text-slate-400') + '">' +
-        (on ? '📌 в моя' : '📌') + '</button>';
+      pin = '<div class="pr-2 flex-shrink-0" title="В моя календар">' + pinToggleHtml(mem.id, on, 'sm') + '</div>';
     }
     return '<div class="flex items-center gap-1 pr-2 ' + (active ? 'bg-primary-50 dark:bg-primary-900/30' : '') + '">' +
       '<button type="button" onclick="switchMember(\'' + mem.id + '\')" class="flex-1 min-w-0 px-4 py-3 text-left text-sm flex items-center gap-3 ' +
@@ -3345,6 +3347,33 @@ function selectMemberAvatar(a) {
     btn.classList.toggle('ring-primary-500', btn.textContent.trim() === a);
   });
 }
+
+function onMemberTypeChange() {
+  var t = document.getElementById('member-type');
+  var type = t ? t.value : 'person';
+  var pet = document.getElementById('member-fields-pet');
+  var person = document.getElementById('member-fields-person');
+  if (pet) pet.classList.toggle('hidden', type !== 'pet');
+  if (person) person.classList.toggle('hidden', type !== 'person');
+  var sub = document.getElementById('member-modal-sub');
+  if (sub) sub.textContent = type === 'pet' ? 'Порода, тегло, възраст — без кръвна група' : 'Данни за човек в домакинството';
+  var title = document.getElementById('member-modal-title');
+  if (title && !window._editingMemberId) {
+    title.textContent = type === 'pet' ? 'Нов любимец' : 'Нов профил';
+  }
+}
+
+function pinToggleHtml(memberId, on, size) {
+  // Visual on/off switch
+  var w = size === 'sm' ? 'w-11 h-6' : 'w-12 h-7';
+  var knob = size === 'sm' ? 'w-5 h-5' : 'w-6 h-6';
+  var tx = on ? 'translateX(20px)' : 'translateX(0)';
+  if (size === 'sm') tx = on ? 'translateX(18px)' : 'translateX(0)';
+  return '<button type="button" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" onclick="event.stopPropagation(); toggleMemberOnMyCalendar(\'' + memberId + '\')" class="relative ' + w + ' flex-shrink-0 rounded-full transition ' +
+    (on ? 'bg-amber-500' : 'bg-slate-200 dark:bg-slate-600') + '">' +
+    '<span class="absolute top-0.5 left-0.5 ' + knob + ' rounded-full bg-white shadow transition-transform" style="transform:' + tx + '"></span></button>';
+}
+
 function openAddMemberModal() {
   closeMemberMenu();
   window._editingMemberId = null;
@@ -3358,10 +3387,19 @@ function openAddMemberModal() {
   if (w) w.value = '';
   var bd = document.getElementById('member-birth');
   if (bd) bd.value = '';
+  var wp = document.getElementById('member-weight-person');
+  if (wp) wp.value = '';
+  var bp = document.getElementById('member-birth-person');
+  if (bp) bp.value = '';
+  var np = document.getElementById('member-note-person');
+  if (np) np.value = '';
+  var h = document.getElementById('member-height');
+  if (h) h.value = '';
   _memberAvatar = '🧒';
   selectMemberAvatar('🧒');
-  var title = document.querySelector('#member-modal h3');
+  var title = document.getElementById('member-modal-title');
   if (title) title.textContent = 'Нов профил';
+  onMemberTypeChange();
   var m = document.getElementById('member-modal');
   if (m) m.classList.remove('hidden');
 }
@@ -3369,6 +3407,29 @@ function closeMemberModal() {
   var m = document.getElementById('member-modal');
   if (m) m.classList.add('hidden');
 }
+function readMemberFormFields(type) {
+  var breed = '', weight = '', birthDate = '', height = '', note = '';
+  if (type === 'pet') {
+    var breedEl = document.getElementById('member-breed');
+    var weightEl = document.getElementById('member-weight');
+    var birthEl = document.getElementById('member-birth');
+    var heightEl = document.getElementById('member-height');
+    breed = breedEl ? breedEl.value.trim() : '';
+    weight = weightEl ? weightEl.value.trim() : '';
+    birthDate = birthEl ? birthEl.value : '';
+    height = heightEl ? heightEl.value.trim() : '';
+  } else {
+    var wp = document.getElementById('member-weight-person');
+    var bp = document.getElementById('member-birth-person');
+    var np = document.getElementById('member-note-person');
+    weight = wp ? wp.value.trim() : '';
+    birthDate = bp ? bp.value : '';
+    note = np ? np.value.trim() : '';
+    breed = note; // store note in breed field for people as free text label
+  }
+  return { breed: breed, weight: weight, birthDate: birthDate, height: height, note: note };
+}
+
 function saveNewMember() {
   var nameEl = document.getElementById('member-name');
   var name = nameEl ? nameEl.value.trim() : '';
@@ -3376,17 +3437,17 @@ function saveNewMember() {
   var typeEl = document.getElementById('member-type');
   var type = typeEl ? typeEl.value : 'person';
   var id = 'm_' + Date.now().toString(36);
-  var breedEl = document.getElementById('member-breed');
-  var weightEl = document.getElementById('member-weight');
-  var birthEl = document.getElementById('member-birth');
+  var f = readMemberFormFields(type);
   var mem = {
     id: id,
     name: name,
     type: type,
     avatar: _memberAvatar || (type === 'pet' ? '🐶' : '🧒'),
-    breed: breedEl ? breedEl.value.trim() : '',
-    weight: weightEl ? weightEl.value.trim() : '',
-    birthDate: birthEl ? birthEl.value : '',
+    breed: f.breed,
+    weight: f.weight,
+    birthDate: f.birthDate,
+    height: f.height,
+    note: f.note,
     showOnMyCalendar: true
   };
   members.push(mem);
@@ -3417,13 +3478,22 @@ function openEditMember(memberId) {
   var b = document.getElementById('member-breed');
   if (b) b.value = m.breed || '';
   var w = document.getElementById('member-weight');
-  if (w) w.value = m.weight || '';
+  if (w) w.value = m.type === 'pet' ? (m.weight || '') : '';
   var bd = document.getElementById('member-birth');
-  if (bd) bd.value = m.birthDate || '';
-  _memberAvatar = m.avatar || '🐶';
+  if (bd) bd.value = m.type === 'pet' ? (m.birthDate || '') : '';
+  var wp = document.getElementById('member-weight-person');
+  if (wp) wp.value = m.type !== 'pet' ? (m.weight || '') : '';
+  var bp = document.getElementById('member-birth-person');
+  if (bp) bp.value = m.type !== 'pet' ? (m.birthDate || '') : '';
+  var np = document.getElementById('member-note-person');
+  if (np) np.value = m.note || m.breed || '';
+  var h = document.getElementById('member-height');
+  if (h) h.value = m.height || '';
+  _memberAvatar = m.avatar || (m.type === 'pet' ? '🐶' : '🧒');
   selectMemberAvatar(_memberAvatar);
-  var title = document.querySelector('#member-modal h3');
-  if (title) title.textContent = 'Редакция на профил';
+  var title = document.getElementById('member-modal-title');
+  if (title) title.textContent = 'Данни за ' + (m.name || 'профила');
+  onMemberTypeChange();
   closeMemberMenu();
   var modal = document.getElementById('member-modal');
   if (modal) modal.classList.remove('hidden');
@@ -3439,18 +3509,19 @@ function saveMemberFromModal() {
     m.name = name;
     var typeEl = document.getElementById('member-type');
     if (typeEl) m.type = typeEl.value;
-    var breedEl = document.getElementById('member-breed');
-    var weightEl = document.getElementById('member-weight');
-    var birthEl = document.getElementById('member-birth');
-    m.breed = breedEl ? breedEl.value.trim() : '';
-    m.weight = weightEl ? weightEl.value.trim() : '';
-    m.birthDate = birthEl ? birthEl.value : '';
+    var f = readMemberFormFields(m.type || 'person');
+    m.breed = f.breed;
+    m.weight = f.weight;
+    m.birthDate = f.birthDate;
+    m.height = f.height;
+    m.note = f.note;
     m.avatar = _memberAvatar || m.avatar;
     persistMembers();
     window._editingMemberId = null;
     closeMemberModal();
     updateMemberSwitchLabel();
     if (typeof renderToday === 'function') renderToday();
+    if (typeof renderProfilePage === 'function') renderProfilePage();
     renderHouseholdSettings();
     return;
   }
