@@ -842,21 +842,41 @@ function updateHeaderForTab(tab) {
 }
 
 function renderProfilePage() {
-  var name = (profile.name || (currentUser && currentUser.displayName) || '—');
-  var avatar = profile.avatar || '👩';
+  var isSelf = !viewingRemoteUid && (!currentMemberId || currentMemberId === 'self');
+  var mem = getCurrentMember();
+  var name, avatar, subtitle;
+  if (isSelf) {
+    name = (profile.name || (currentUser && currentUser.displayName) || '—');
+    avatar = profile.avatar || '👩';
+    subtitle = (currentUser && currentUser.email) || '';
+  } else if (viewingRemoteUid) {
+    var peer = householdPeers.find(function (p) { return p.uid === viewingRemoteUid; }) || {};
+    name = peer.name || 'Член';
+    avatar = peer.avatar || '👤';
+    subtitle = 'Споделен профил от домакинството';
+  } else {
+    name = (mem && mem.name) || 'Профил';
+    avatar = (mem && mem.avatar) || '👤';
+    subtitle = (mem && mem.type === 'pet') ? 'Домашен любимец' : 'Профил в домакинството';
+  }
   var av = document.getElementById('profile-page-avatar');
   var nm = document.getElementById('profile-page-name');
   var em = document.getElementById('profile-page-email');
+  var editBtn = document.getElementById('profile-edit-btn');
   if (av) av.textContent = avatar;
   if (nm) nm.textContent = name;
-  if (em) em.textContent = (currentUser && currentUser.email) || '';
+  if (em) em.textContent = subtitle;
+  if (editBtn) {
+    editBtn.textContent = isSelf ? 'Редактирай данните →' : ('Редактирай ' + name + ' →');
+    editBtn.classList.toggle('hidden', !!viewingRemoteUid);
+  }
 
-  // stats
+  // stats — already filtered by current member via getMedsForDate / medBelongsToCurrent
   var streak = typeof calculateStreak === 'function' ? calculateStreak() : 0;
   var se = document.getElementById('stat-streak');
   if (se) se.textContent = streak;
   var sm = document.getElementById('stat-meds');
-  if (sm) sm.textContent = meds.length;
+  if (sm) sm.textContent = meds.filter(function (m) { return medBelongsToCurrent(m) && m.archived !== true; }).length;
 
   // perfect days last 7
   var today = new Date();
@@ -886,16 +906,30 @@ function renderProfilePage() {
   var st = document.getElementById('stat-taken-total');
   if (st) st.textContent = allTaken;
 
-  // health summary
+  // health / member summary
   var hs = document.getElementById('profile-health-summary');
+  var ht = document.getElementById('profile-health-title');
   if (hs) {
     var rows = [];
-    if (profile.weight) rows.push('<div class="flex justify-between"><span class="text-slate-400">Тегло</span><span class="font-medium">' + profile.weight + ' кг</span></div>');
-    if (profile.height) rows.push('<div class="flex justify-between"><span class="text-slate-400">Височина</span><span class="font-medium">' + profile.height + ' см</span></div>');
-    if (profile.blood) rows.push('<div class="flex justify-between"><span class="text-slate-400">Кръвна група</span><span class="font-medium">' + profile.blood + '</span></div>');
-    if (profile.allergies) rows.push('<div class="flex justify-between gap-4"><span class="text-slate-400">Алергии</span><span class="font-medium text-right">' + profile.allergies + '</span></div>');
-    if (profile.gender) rows.push('<div class="flex justify-between"><span class="text-slate-400">Род</span><span class="font-medium">' + (profile.gender === 'm' ? 'Мъж' : 'Жена') + '</span></div>');
-    hs.innerHTML = rows.length ? rows.join('') : '<p class="text-slate-400">Все още няма попълнени данни. Натисни „Редактирай данните“.</p>';
+    if (isSelf) {
+      if (ht) ht.textContent = 'Здравни данни';
+      if (profile.weight) rows.push('<div class="flex justify-between"><span class="text-slate-400">Тегло</span><span class="font-medium">' + profile.weight + ' кг</span></div>');
+      if (profile.height) rows.push('<div class="flex justify-between"><span class="text-slate-400">Височина</span><span class="font-medium">' + profile.height + ' см</span></div>');
+      if (profile.blood) rows.push('<div class="flex justify-between"><span class="text-slate-400">Кръвна група</span><span class="font-medium">' + profile.blood + '</span></div>');
+      if (profile.allergies) rows.push('<div class="flex justify-between gap-4"><span class="text-slate-400">Алергии</span><span class="font-medium text-right">' + profile.allergies + '</span></div>');
+      if (profile.gender) rows.push('<div class="flex justify-between"><span class="text-slate-400">Род</span><span class="font-medium">' + (profile.gender === 'm' ? 'Мъж' : 'Жена') + '</span></div>');
+      hs.innerHTML = rows.length ? rows.join('') : '<p class="text-slate-400">Все още няма попълнени данни. Натисни „Редактирай данните“.</p>';
+    } else if (mem && !viewingRemoteUid) {
+      if (ht) ht.textContent = (mem.type === 'pet') ? 'Данни за любимеца' : 'Данни за профила';
+      if (mem.breed) rows.push('<div class="flex justify-between"><span class="text-slate-400">Порода / бележка</span><span class="font-medium">' + mem.breed + '</span></div>');
+      if (mem.weight) rows.push('<div class="flex justify-between"><span class="text-slate-400">Тегло</span><span class="font-medium">' + mem.weight + '</span></div>');
+      if (mem.birthDate) rows.push('<div class="flex justify-between"><span class="text-slate-400">Рождена дата</span><span class="font-medium">' + mem.birthDate + (typeof memberAgeLabel === 'function' ? ' · ' + memberAgeLabel(mem.birthDate) : '') + '</span></div>');
+      rows.push('<div class="flex justify-between"><span class="text-slate-400">В моя календар</span><span class="font-medium">' + (mem.showOnMyCalendar ? 'Да 📌' : 'Не') + '</span></div>');
+      hs.innerHTML = rows.length ? rows.join('') : '<p class="text-slate-400">Няма попълнени данни. Натисни „Редактирай“.</p>';
+    } else {
+      if (ht) ht.textContent = 'Информация';
+      hs.innerHTML = '<p class="text-slate-400">Споделен профил — данните се управляват от собственика.</p>';
+    }
   }
 
   // achievements
@@ -959,12 +993,16 @@ function switchTab(tab) {
   }
   if (tab === 'meds') renderMeds();
   if (tab === 'profile') renderProfilePage();
+  if (tab === 'household') {
+    if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
+  }
   if (tab === 'settings') {
     applyNotifToggle();
     loadNotifTimes();
     applyTheme();
     applyCalDotsToggle();
     applyStockToggle();
+    if (typeof applyNavMode === 'function') applyNavMode();
   }
   var menu = document.getElementById('app-menu');
   if (menu) menu.classList.add('hidden');
@@ -3285,6 +3323,8 @@ function switchMember(id) {
   renderToday();
   renderCalendar();
   if (typeof renderTakenHistory === 'function') renderTakenHistory();
+  if (typeof renderProfilePage === 'function') renderProfilePage();
+  if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
 }
 
 function switchRemoteMember(uid, name, avatar) {
