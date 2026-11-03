@@ -189,18 +189,18 @@
   <div id="app" class="hidden min-h-screen flex flex-col">
     <!-- Header -->
     <header class="sticky top-0 z-40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 safe-top">
-      <div class="max-w-3xl mx-auto safe-x py-3 flex items-center justify-between">
-        <div class="flex items-center gap-2.5 min-w-0">
+      <div class="max-w-3xl mx-auto safe-x py-2.5 grid grid-cols-3 items-center gap-2">
+        <div class="flex items-center gap-2 min-w-0 justify-start">
           <div class="w-9 h-9 rounded-xl bg-primary-500 text-white flex items-center justify-center text-lg shadow-sm flex-shrink-0">💊</div>
-          <div class="min-w-0">
-            <h1 class="brand-title text-lg leading-tight text-slate-800 dark:text-white">PillFlow</h1>
-            <button type="button" id="member-switch-btn" onclick="toggleMemberMenu()" class="text-sm font-semibold text-slate-700 dark:text-slate-200 hover:text-primary-500 flex items-center gap-1 max-w-[180px] mt-0.5">
-              <span id="member-switch-label" class="truncate">Аз</span>
-              <span class="text-xs text-slate-400 font-normal">▾</span>
-            </button>
-          </div>
+          <h1 class="brand-title text-base leading-tight text-slate-800 dark:text-white truncate hidden sm:block">PillFlow</h1>
         </div>
-        <div class="flex items-center gap-1 relative">
+        <div class="flex justify-center min-w-0">
+          <button type="button" id="member-switch-btn" onclick="toggleMemberMenu()" class="max-w-full px-3 py-1.5 rounded-2xl bg-slate-100 dark:bg-slate-700/80 hover:bg-primary-50 dark:hover:bg-primary-900/30 border border-slate-200/80 dark:border-slate-600 flex items-center gap-1.5 transition">
+            <span id="member-switch-label" class="text-sm font-bold text-slate-800 dark:text-white truncate">Аз</span>
+            <span class="text-xs text-slate-400 flex-shrink-0">▾</span>
+          </button>
+        </div>
+        <div class="flex items-center gap-1 relative justify-end">
           <button onclick="toggleDarkMode()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition" title="Тема">
             <span id="theme-icon">🌙</span>
           </button>
@@ -406,7 +406,7 @@
               <p class="text-white/70 text-sm" id="profile-page-email">—</p>
             </div>
           </div>
-          <button onclick="openProfileEditModal()" class="mt-4 w-full py-2.5 rounded-xl bg-white/15 hover:bg-white/25 backdrop-blur text-sm font-semibold transition">
+          <button id="profile-edit-btn" onclick="openProfileEditModal()" class="mt-4 w-full py-2.5 rounded-xl bg-white/15 hover:bg-white/25 backdrop-blur text-sm font-semibold transition">
             Редактирай данните →
           </button>
         </div>
@@ -431,7 +431,7 @@
         </div>
 
         <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-5">
-          <h3 class="font-bold mb-3">Здравни данни</h3>
+          <h3 class="font-bold mb-3" id="profile-health-title">Здравни данни</h3>
           <div class="space-y-2 text-sm" id="profile-health-summary">
             <p class="text-slate-400">Все още няма попълнени данни</p>
           </div>
@@ -443,6 +443,45 @@
             <!-- filled by JS -->
           </div>
         </div>
+      </div>
+
+
+      <!-- TAB: ДОМАКИНСТВО -->
+      <div id="tab-household" class="tab-content fade-in">
+        <h2 class="text-xl font-bold mb-1">Домакинство</h2>
+        <p class="text-sm text-slate-400 mb-5">Профили вкъщи и споделяне</p>
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-4">
+          <div>
+            <h3 class="font-bold text-base">🏠 Домакинство</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Профили вкъщи + споделяне с друг акаунт</p>
+          </div>
+
+          <div>
+            <p class="text-xs font-semibold text-slate-400 uppercase mb-2">Локални профили</p>
+            <div id="household-members-list" class="space-y-2"></div>
+            <button type="button" onclick="openAddMemberModal()" class="mt-2 w-full py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-sm text-primary-600 font-medium">+ Добави човек / любимец</button>
+          </div>
+
+          <div class="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-3">
+            <p class="text-xs font-semibold text-slate-400 uppercase">Споделено с друг акаунт</p>
+            <div id="household-status" class="text-sm text-slate-500">Не си в споделено домакинство.</div>
+            <div id="household-actions" class="flex flex-col gap-2">
+              <button type="button" onclick="createHousehold()" class="w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold">Създай код за покана</button>
+              <button type="button" onclick="promptJoinHousehold()" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-medium">Присъедини се с код</button>
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="min-w-0 pr-2">
+                <p class="text-sm font-medium">Моят акаунт е споделен</p>
+                <p class="text-xs text-slate-400">Другите виждат хапчетата ми и могат да отбелязват</p>
+              </div>
+              <button type="button" id="share-household-toggle" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 flex-shrink-0 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+                <span id="share-household-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+
       </div>
 
       <!-- TAB: НАСТРОЙКИ -->
@@ -519,35 +558,14 @@
           </button>
         </div>
 
-        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-4">
-          <div>
-            <h3 class="font-bold text-base">🏠 Домакинство</h3>
-            <p class="text-xs text-slate-400 mt-0.5">Профили вкъщи + споделяне с друг акаунт</p>
-          </div>
-
-          <div>
-            <p class="text-xs font-semibold text-slate-400 uppercase mb-2">Локални профили</p>
-            <div id="household-members-list" class="space-y-2"></div>
-            <button type="button" onclick="openAddMemberModal()" class="mt-2 w-full py-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-sm text-primary-600 font-medium">+ Добави човек / любимец</button>
-          </div>
-
-          <div class="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-3">
-            <p class="text-xs font-semibold text-slate-400 uppercase">Споделено с друг акаунт</p>
-            <div id="household-status" class="text-sm text-slate-500">Не си в споделено домакинство.</div>
-            <div id="household-actions" class="flex flex-col gap-2">
-              <button type="button" onclick="createHousehold()" class="w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold">Създай код за покана</button>
-              <button type="button" onclick="promptJoinHousehold()" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-medium">Присъедини се с код</button>
+        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4">
+          <button type="button" onclick="switchTab('household')" class="w-full flex items-center justify-between text-left">
+            <div>
+              <p class="font-medium">🏠 Домакинство</p>
+              <p class="text-xs text-slate-400">Профили, Макс, споделяне с друг акаунт</p>
             </div>
-            <div class="flex items-center justify-between">
-              <div class="min-w-0 pr-2">
-                <p class="text-sm font-medium">Моят акаунт е споделен</p>
-                <p class="text-xs text-slate-400">Другите виждат хапчетата ми и могат да отбелязват</p>
-              </div>
-              <button type="button" id="share-household-toggle" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 flex-shrink-0 rounded-full bg-slate-200 dark:bg-slate-600 transition">
-                <span id="share-household-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
-              </button>
-            </div>
-          </div>
+            <span class="text-slate-400">→</span>
+          </button>
         </div>
 
         <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-200 dark:divide-slate-700">
@@ -569,7 +587,7 @@
     <!-- Bottom Navigation - 3 бутона -->
     <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 safe-bottom" style="padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);">
       <div id="bottom-nav-inner" class="max-w-3xl mx-auto grid grid-cols-3 items-end">
-        <button type="button" id="nav-hh" onclick="menuGo('household')" data-tab="household" class="nav-btn nav-extra hidden flex flex-col items-center py-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+        <button type="button" id="nav-hh" onclick="switchTab('household')" data-tab="household" class="nav-btn nav-extra hidden flex flex-col items-center py-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
           <span class="text-xl">🏠</span>
           <span class="text-[10px] mt-0.5 font-medium">Дом</span>
         </button>
@@ -960,7 +978,7 @@
       </div>
       <div class="border-t border-slate-100 dark:border-slate-700">
         <button type="button" onclick="openAddMemberModal()" class="w-full px-4 py-3 text-left text-sm text-primary-600 font-medium hover:bg-slate-50 dark:hover:bg-slate-700">+ Добави човек / любимец</button>
-        <button type="button" onclick="menuGo('household'); closeMemberMenu();" class="w-full px-4 py-3 text-left text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">🏠 Настройки на домакинство</button>
+        <button type="button" onclick="closeMemberMenu(); switchTab('household');" class="w-full px-4 py-3 text-left text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">🏠 Настройки на домакинство</button>
       </div>
     </div>
   </div>
