@@ -186,9 +186,9 @@ function activeMeds() {
 }
 
 function logDocId(dateStr) {
-  // For remote user we still write under their logs with same doc id scheme
+  // Use "__" so member ids like m_abc123 do not break parsing
   if (!currentMemberId || currentMemberId === 'self') return dateStr;
-  return currentMemberId + '_' + dateStr;
+  return currentMemberId + '__' + dateStr;
 }
 
 function dataUid() {
@@ -198,15 +198,22 @@ function dataUid() {
 
 function parseLogDocId(docId) {
   // returns { memberId, dateStr }
+  // Prefer "__" separator; also accept legacy single "_" for self-safe dates only
   if (/^\d{4}-\d{2}-\d{2}$/.test(docId)) return { memberId: 'self', dateStr: docId };
-  var idx = docId.indexOf('_');
+  var idx = docId.indexOf('__');
   if (idx > 0) {
-    return { memberId: docId.slice(0, idx), dateStr: docId.slice(idx + 1) };
+    return { memberId: docId.slice(0, idx), dateStr: docId.slice(idx + 2) };
+  }
+  // legacy: only if suffix is a pure date
+  var m = docId.match(/^(.*)_(........\d{2}-\d{2}-\d{2})$/);
+  if (m && /^\d{4}-\d{2}-\d{2}$/.test(m[2])) {
+    return { memberId: m[1], dateStr: m[2] };
   }
   return { memberId: 'self', dateStr: docId };
 }
 
 function applyDoseTemplate(n) {
+  // legacy: exact clock times
   document.querySelectorAll('.time-check').forEach(function (c) { c.checked = false; });
   _customTimes = [];
   var presets = {
@@ -216,6 +223,14 @@ function applyDoseTemplate(n) {
     4: ['08:00', '12:00', '16:00', '20:00']
   };
   _customTimes = (presets[n] || presets[1]).slice();
+  renderCustomTimesList();
+}
+
+function applyPeriodTemplate(periods) {
+  document.querySelectorAll('.time-check').forEach(function (c) {
+    c.checked = periods.indexOf(c.value) !== -1;
+  });
+  _customTimes = [];
   renderCustomTimesList();
 }
 
@@ -983,6 +998,24 @@ function shouldTakeOnDate(med, date) {
   return true;
 }
 
+function memberAgeLabel(birthDate) {
+  if (!birthDate) return '';
+  try {
+    var b = parseLocalDate(birthDate) || new Date(birthDate);
+    if (!b || isNaN(b.getTime())) return birthDate;
+    var now = new Date();
+    var years = now.getFullYear() - b.getFullYear();
+    var m = now.getMonth() - b.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < b.getDate())) years--;
+    if (years < 1) {
+      var months = (now.getFullYear() - b.getFullYear()) * 12 + now.getMonth() - b.getMonth();
+      if (now.getDate() < b.getDate()) months--;
+      return months <= 0 ? 'новородено' : months + ' мес.';
+    }
+    return years + (years === 1 ? ' г.' : ' г.');
+  } catch (e) { return birthDate; }
+}
+
 function getMemberMeta(memberId) {
   var mid = memberId || 'self';
   var m = members.find(function (x) { return x.id === mid; });
@@ -1043,7 +1076,9 @@ function getMedsForDate(date) {
   if (!viewingRemoteUid && currentMemberId === 'self') {
     meds.forEach(function (med) {
       if ((med.memberId || 'self') === 'self') return;
-      if (!med.showOnOwnerToday) return;
+      var meta = getMemberMeta(med.memberId);
+      var memberPinned = !!(meta && meta.showOnMyCalendar);
+      if (!memberPinned && !med.showOnOwnerToday) return;
       if (med.active === false || med.archived === true) return;
       if (!shouldTakeOnDate(med, date)) return;
       if (list.some(function (x) { return x.id === med.id; })) return;
@@ -1168,8 +1203,18 @@ function buildCountdownHtml() {
 function renderToday() {
   const dateStr = formatDate(currentDate);
   const isToday = isSameDay(currentDate, new Date());
-  const firstName = (profile.name || currentUser?.displayName || '').split(' ')[0];
-  const avatar = profile.avatar || '👩';
+  const mem = getCurrentMember();
+  const isSelf = !viewingRemoteUid && (!currentMemberId || currentMemberId === 'self');
+  const firstName = isSelf
+    ? (profile.name || currentUser?.displayName || '').split(' ')[0]
+    : (viewingRemoteUid
+        ? ((householdPeers.find(function (p) { return p.uid === viewingRemoteUid; }) || {}).name || 'Член')
+        : (mem && mem.name) || 'Профил');
+  const avatar = isSelf
+    ? (profile.avatar || '👩')
+    : (viewingRemoteUid
+        ? ((householdPeers.find(function (p) { return p.uid === viewingRemoteUid; }) || {}).avatar || '👤')
+        : (mem && mem.avatar) || '👤');
 
   // Hero avatar + greeting (main blue card – clear and visible)
   const heroAv = document.getElementById('hero-avatar');
@@ -1177,12 +1222,31 @@ function renderToday() {
 
   const greetEl = document.getElementById('today-greeting');
   const nameEl = document.getElementById('today-name');
+  const heroExtra = document.getElementById('hero-member-extra');
   if (isToday) {
-    if (greetEl) greetEl.textContent = getGreeting();
-    if (nameEl) nameEl.textContent = firstName || 'Ти';
+    if (isSelf) {
+      if (greetEl) greetEl.textContent = getGreeting();
+      if (nameEl) nameEl.textContent = firstName || 'Ти';
+    } else {
+      if (greetEl) greetEl.textContent = (mem && mem.type === 'pet') ? 'Профил · любимец' : 'Профил';
+      if (nameEl) nameEl.textContent = firstName;
+    }
   } else {
     if (greetEl) greetEl.textContent = firstName || 'PillFlow';
     if (nameEl) nameEl.textContent = formatDisplayDate(currentDate);
+  }
+  if (heroExtra) {
+    if (!isSelf && mem && !viewingRemoteUid) {
+      var bits = [];
+      if (mem.breed) bits.push(mem.breed);
+      if (mem.weight) bits.push(mem.weight + (String(mem.weight).match(/кг|kg/i) ? '' : ' кг'));
+      if (mem.birthDate) bits.push(memberAgeLabel(mem.birthDate));
+      heroExtra.textContent = bits.join(' · ') || (mem.type === 'pet' ? 'Домашен любимец' : 'Член на домакинството');
+      heroExtra.classList.remove('hidden');
+    } else {
+      heroExtra.textContent = '';
+      heroExtra.classList.add('hidden');
+    }
   }
 
   const dayMeds = getMedsForDate(currentDate);
@@ -1514,7 +1578,7 @@ function applyLogChange(medId, time, state) {
   const memberForLog = (medRef && medRef.memberId) ? medRef.memberId : (currentMemberId || 'self');
   function docIdForMember(mid, ds) {
     if (!mid || mid === 'self') return ds;
-    return mid + '_' + ds;
+    return mid + '__' + ds;
   }
 
   let value;
@@ -1526,23 +1590,36 @@ function applyLogChange(medId, time, state) {
     value = null; // delete
   }
 
+  // Optimistic local update (fixes lag / "can't mark" feel for member profiles)
+  if (!logs[dateStr]) logs[dateStr] = {};
+  if (value === null) delete logs[dateStr][key];
+  else logs[dateStr][key] = value;
+
   if (firebaseReady) {
     const ref = db.collection('users').doc(dataUid()).collection('logs').doc(docIdForMember(memberForLog, dateStr));
     if (value === null) {
-      ref.update({ [key]: firebase.firestore.FieldValue.delete() }).catch(function () {
-        ref.set({}, { merge: true });
+      ref.update({ [key]: firebase.firestore.FieldValue.delete() }).catch(function (err) {
+        console.warn(err);
+        ref.set({ [key]: firebase.firestore.FieldValue.delete() }, { merge: true }).catch(function () {
+          // fallback clear
+          var o = {}; o[key] = null;
+          ref.set(logs[dateStr] || {}, { merge: true });
+        });
       });
     } else {
-      ref.set({ [key]: value }, { merge: true });
+      ref.set({ [key]: value }, { merge: true }).catch(function (err) {
+        console.warn('log write', err);
+        alert('Не можа да се запише отметката. Провери връзката / Firebase rules.');
+      });
     }
     if (wasTaken && !state.taken && !state.skipStock) adjustStock(medId, +1);
     if (!wasTaken && state.taken && !state.skipStock) adjustStock(medId, -1);
+    renderToday();
+    renderCalendar();
     setTimeout(function () {
       if (!wasComplete && isDayComplete(currentDate)) showCompleteToast();
-      renderToday();
-      renderCalendar();
       if (typeof renderTakenHistory === 'function') renderTakenHistory();
-    }, 350);
+    }, 200);
   } else {
     if (!logs[dateStr]) logs[dateStr] = {};
     if (value === null) delete logs[dateStr][key];
@@ -2766,11 +2843,33 @@ function randomHouseholdCode() {
 }
 
 function renderHouseholdSettings() {
+  var listEl = document.getElementById('household-members-list');
+  if (listEl) {
+    listEl.innerHTML = members.map(function (mem) {
+      if (mem.id === 'self') {
+        return '<div class="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/40">' +
+          '<span class="text-xl">' + (mem.avatar || profile.avatar || '👤') + '</span>' +
+          '<div class="flex-1 min-w-0"><p class="text-sm font-semibold truncate">' + (profile.name || mem.name || 'Аз') + '</p>' +
+          '<p class="text-[11px] text-slate-400">Ти (основен профил)</p></div></div>';
+      }
+      var on = !!mem.showOnMyCalendar;
+      return '<div class="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/40">' +
+        '<span class="text-xl">' + (mem.avatar || '👤') + '</span>' +
+        '<div class="flex-1 min-w-0">' +
+        '<p class="text-sm font-semibold truncate">' + mem.name + '</p>' +
+        '<p class="text-[11px] text-slate-400">' + (mem.type === 'pet' ? 'Любимец' : 'Профил') +
+        (mem.breed ? ' · ' + mem.breed : '') + '</p>' +
+        '<label class="mt-1 flex items-center gap-2 text-[11px] text-slate-500 cursor-pointer">' +
+        '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="toggleMemberOnMyCalendar(\'' + mem.id + '\')" class="rounded text-primary-500">' +
+        'Показвай в моя календар / Днес</label></div>' +
+        '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-xs text-primary-500 px-2 py-1">✎</button></div>';
+    }).join('');
+  }
   var status = document.getElementById('household-status');
   var actions = document.getElementById('household-actions');
   if (!status) return;
   if (!firebaseReady) {
-    status.textContent = 'Домакинството изисква Firebase акаунт (облак).';
+    status.textContent = 'Споделянето с друг акаунт изисква Firebase (облак).';
     if (actions) actions.classList.add('hidden');
     return;
   }
@@ -3078,12 +3177,21 @@ function selectMemberAvatar(a) {
 }
 function openAddMemberModal() {
   closeMemberMenu();
+  window._editingMemberId = null;
   var n = document.getElementById('member-name');
   if (n) n.value = '';
   var t = document.getElementById('member-type');
   if (t) t.value = 'person';
+  var b = document.getElementById('member-breed');
+  if (b) b.value = '';
+  var w = document.getElementById('member-weight');
+  if (w) w.value = '';
+  var bd = document.getElementById('member-birth');
+  if (bd) bd.value = '';
   _memberAvatar = '🧒';
   selectMemberAvatar('🧒');
+  var title = document.querySelector('#member-modal h3');
+  if (title) title.textContent = 'Нов профил';
   var m = document.getElementById('member-modal');
   if (m) m.classList.remove('hidden');
 }
@@ -3098,11 +3206,85 @@ function saveNewMember() {
   var typeEl = document.getElementById('member-type');
   var type = typeEl ? typeEl.value : 'person';
   var id = 'm_' + Date.now().toString(36);
-  var mem = { id: id, name: name, type: type, avatar: _memberAvatar || (type === 'pet' ? '🐶' : '🧒') };
+  var breedEl = document.getElementById('member-breed');
+  var weightEl = document.getElementById('member-weight');
+  var birthEl = document.getElementById('member-birth');
+  var mem = {
+    id: id,
+    name: name,
+    type: type,
+    avatar: _memberAvatar || (type === 'pet' ? '🐶' : '🧒'),
+    breed: breedEl ? breedEl.value.trim() : '',
+    weight: weightEl ? weightEl.value.trim() : '',
+    birthDate: birthEl ? birthEl.value : '',
+    showOnMyCalendar: true
+  };
   members.push(mem);
   persistMembers();
   closeMemberModal();
   switchMember(id);
+}
+
+function toggleMemberOnMyCalendar(memberId) {
+  var m = members.find(function (x) { return x.id === memberId; });
+  if (!m || m.id === 'self') return;
+  m.showOnMyCalendar = !m.showOnMyCalendar;
+  persistMembers();
+  renderHouseholdSettings();
+  renderMemberMenuList();
+  if (typeof renderToday === 'function') renderToday();
+  if (typeof renderCalendar === 'function') renderCalendar();
+}
+
+function openEditMember(memberId) {
+  var m = members.find(function (x) { return x.id === memberId; });
+  if (!m || m.id === 'self') return;
+  window._editingMemberId = memberId;
+  var n = document.getElementById('member-name');
+  if (n) n.value = m.name || '';
+  var t = document.getElementById('member-type');
+  if (t) t.value = m.type || 'person';
+  var b = document.getElementById('member-breed');
+  if (b) b.value = m.breed || '';
+  var w = document.getElementById('member-weight');
+  if (w) w.value = m.weight || '';
+  var bd = document.getElementById('member-birth');
+  if (bd) bd.value = m.birthDate || '';
+  _memberAvatar = m.avatar || '🐶';
+  selectMemberAvatar(_memberAvatar);
+  var title = document.querySelector('#member-modal h3');
+  if (title) title.textContent = 'Редакция на профил';
+  closeMemberMenu();
+  var modal = document.getElementById('member-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function saveMemberFromModal() {
+  if (window._editingMemberId) {
+    var m = members.find(function (x) { return x.id === window._editingMemberId; });
+    if (!m) return;
+    var nameEl = document.getElementById('member-name');
+    var name = nameEl ? nameEl.value.trim() : '';
+    if (!name) { alert('Въведи име'); return; }
+    m.name = name;
+    var typeEl = document.getElementById('member-type');
+    if (typeEl) m.type = typeEl.value;
+    var breedEl = document.getElementById('member-breed');
+    var weightEl = document.getElementById('member-weight');
+    var birthEl = document.getElementById('member-birth');
+    m.breed = breedEl ? breedEl.value.trim() : '';
+    m.weight = weightEl ? weightEl.value.trim() : '';
+    m.birthDate = birthEl ? birthEl.value : '';
+    m.avatar = _memberAvatar || m.avatar;
+    persistMembers();
+    window._editingMemberId = null;
+    closeMemberModal();
+    updateMemberSwitchLabel();
+    if (typeof renderToday === 'function') renderToday();
+    renderHouseholdSettings();
+    return;
+  }
+  saveNewMember();
 }
 function persistMembers() {
   if (!currentUser) return;
@@ -3137,6 +3319,9 @@ function loadMembers() {
       .onSnapshot(function (doc) {
         if (doc.exists && Array.isArray(doc.data().members) && doc.data().members.length) {
           members = doc.data().members;
+          members.forEach(function (m) {
+            if (m.id !== 'self' && typeof m.showOnMyCalendar === 'undefined') m.showOnMyCalendar = true;
+          });
           if (!members.some(function (m) { return m.id === 'self'; })) {
             members.unshift({ id: 'self', name: (profile && profile.name) || 'Аз', type: 'person', avatar: (profile && profile.avatar) || '👤' });
           }
