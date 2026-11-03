@@ -1219,11 +1219,13 @@ function getCountdownMeds() {
   });
 }
 
-function getMedsForDate(date) {
+function getMedsForDate(date, opts) {
+  opts = opts || {};
   var list = meds.filter(function (med) {
     return medBelongsToCurrent(med) && shouldTakeOnDate(med, date);
   });
-  if (!viewingRemoteUid && currentMemberId === 'self') {
+  // Overlay from pets/kids on owner calendar — skip for reports (ownProfileOnly)
+  if (!opts.ownProfileOnly && !viewingRemoteUid && currentMemberId === 'self') {
     meds.forEach(function (med) {
       if ((med.memberId || 'self') === 'self') return;
       var meta = getMemberMeta(med.memberId);
@@ -3152,7 +3154,7 @@ function generateDoctorReport(from, to) {
   let totalDoses = 0, takenDoses = 0;
 
   eachDateInRange(from, to, function (d) {
-    const dayMeds = getMedsForDate(d);
+    const dayMeds = getMedsForDate(d, { ownProfileOnly: true });
     const dayLog = logs[formatDate(d)] || {};
     let t = 0, tk = 0;
     const lines = [];
@@ -3230,7 +3232,7 @@ function generatePrintPlanner(from, to) {
   var dayBlocks = [];
 
   eachDateInRange(from, to, function (d) {
-    var dayMeds = getMedsForDate(d);
+    var dayMeds = getMedsForDate(d, { ownProfileOnly: true });
     if (!dayMeds.length) return;
     // group by time
     var byTime = {};
