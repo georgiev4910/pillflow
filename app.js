@@ -3026,22 +3026,139 @@ function renderTrendsChart() {
   if (labels) labels.innerHTML = labs;
 }
 
-function generateDoctorReport() {
-  const today = new Date();
+
+window._reportKind = 'doctor';
+
+function openReportModal(kind) {
+  window._reportKind = kind || 'doctor';
+  var title = document.getElementById('report-modal-title');
+  var sub = document.getElementById('report-modal-sub');
+  var fromEl = document.getElementById('report-from');
+  var toEl = document.getElementById('report-to');
+  var presets = document.getElementById('report-presets');
+  var today = new Date();
   today.setHours(0, 0, 0, 0);
-  const name = (profile && profile.name) || (currentUser && currentUser.displayName) || 'Пациент';
+  var yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (kind === 'planner') {
+    if (title) title.textContent = 'Планер за печат';
+    if (sub) sub.textContent = 'Бъдещи дати — чеклист за хладилник / хартия';
+    var to2 = new Date(today);
+    to2.setDate(to2.getDate() + 13); // 2 weeks default
+    if (fromEl) fromEl.value = formatDate(today);
+    if (toEl) toEl.value = formatDate(to2);
+    if (presets) {
+      presets.innerHTML =
+        '<button type="button" onclick="setReportPreset(0,6)" class="px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-600">7 дни</button>' +
+        '<button type="button" onclick="setReportPreset(0,13)" class="px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-600">14 дни</button>' +
+        '<button type="button" onclick="setReportPreset(0,30)" class="px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-600">31 дни</button>';
+    }
+  } else {
+    if (title) title.textContent = 'Справка за лекар';
+    if (sub) sub.textContent = 'По подразбиране до вчера — днес още не е приключил';
+    var from30 = new Date(yesterday);
+    from30.setDate(from30.getDate() - 29);
+    if (fromEl) fromEl.value = formatDate(from30);
+    if (toEl) toEl.value = formatDate(yesterday);
+    if (presets) {
+      presets.innerHTML =
+        '<button type="button" onclick="setReportPresetDoctor(\'week\')" class="px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-600">7 дни до вчера</button>' +
+        '<button type="button" onclick="setReportPresetDoctor(\'month\')" class="px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-600">30 дни до вчера</button>' +
+        '<button type="button" onclick="setReportPresetDoctor(\'yesterday\')" class="px-2.5 py-1 rounded-lg text-xs border border-slate-200 dark:border-slate-600">Само вчера</button>';
+    }
+  }
+  var m = document.getElementById('report-modal');
+  if (m) m.classList.remove('hidden');
+}
+
+function closeReportModal() {
+  var m = document.getElementById('report-modal');
+  if (m) m.classList.add('hidden');
+}
+
+function setReportPreset(fromOffset, toOffset) {
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var f = new Date(today);
+  f.setDate(f.getDate() + fromOffset);
+  var t = new Date(today);
+  t.setDate(t.getDate() + toOffset);
+  var fromEl = document.getElementById('report-from');
+  var toEl = document.getElementById('report-to');
+  if (fromEl) fromEl.value = formatDate(f);
+  if (toEl) toEl.value = formatDate(t);
+}
+
+function setReportPresetDoctor(kind) {
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  var from = new Date(yesterday);
+  if (kind === 'week') from.setDate(from.getDate() - 6);
+  else if (kind === 'month') from.setDate(from.getDate() - 29);
+  // yesterday only: from = to = yesterday
+  var fromEl = document.getElementById('report-from');
+  var toEl = document.getElementById('report-to');
+  if (fromEl) fromEl.value = formatDate(from);
+  if (toEl) toEl.value = formatDate(yesterday);
+}
+
+function confirmReportModal() {
+  var fromEl = document.getElementById('report-from');
+  var toEl = document.getElementById('report-to');
+  var fromStr = fromEl ? fromEl.value : '';
+  var toStr = toEl ? toEl.value : '';
+  if (!fromStr || !toStr) { alert('Избери двете дати'); return; }
+  var from = parseLocalDate(fromStr);
+  var to = parseLocalDate(toStr);
+  if (!from || !to) { alert('Невалидни дати'); return; }
+  from.setHours(0, 0, 0, 0);
+  to.setHours(0, 0, 0, 0);
+  if (to < from) { alert('„До“ трябва да е след „От“'); return; }
+  var daysSpan = Math.round((to - from) / 86400000) + 1;
+  if (daysSpan > 93) { alert('Максимум ~3 месеца наведнъж'); return; }
+  closeReportModal();
+  if (window._reportKind === 'planner') generatePrintPlanner(from, to);
+  else generateDoctorReport(from, to);
+}
+
+function eachDateInRange(from, to, fn) {
+  var d = new Date(from);
+  d.setHours(0, 0, 0, 0);
+  var end = new Date(to);
+  end.setHours(0, 0, 0, 0);
+  while (d <= end) {
+    fn(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+}
+
+function reportPatientName() {
+  var mem = getCurrentMember && getCurrentMember();
+  if (mem && mem.id && mem.id !== 'self' && !viewingRemoteUid) return mem.name || 'Профил';
+  return (profile && profile.name) || (currentUser && currentUser.displayName) || 'Пациент';
+}
+
+function generateDoctorReport(from, to) {
+  if (!from || !to) {
+    openReportModal('doctor');
+    return;
+  }
+  const generated = new Date();
+  const name = reportPatientName();
   const days = [];
   let totalDoses = 0, takenDoses = 0;
 
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
+  eachDateInRange(from, to, function (d) {
     const dayMeds = getMedsForDate(d);
     const dayLog = logs[formatDate(d)] || {};
     let t = 0, tk = 0;
     const lines = [];
-    dayMeds.forEach(med => {
-      (med.times || []).forEach(slot => {
+    dayMeds.forEach(function (med) {
+      var times = (med.times && med.times.length) ? med.times : ['morning'];
+      times.forEach(function (slot) {
         t++;
         const ok = isLogTaken(dayLog, med.id + '_' + slot);
         if (ok) tk++;
@@ -3052,52 +3169,130 @@ function generateDoctorReport() {
     totalDoses += t;
     takenDoses += tk;
     days.push({ date: formatDate(d), display: d.toLocaleDateString('bg-BG'), total: t, taken: tk, lines: lines });
-  }
+  });
 
   const pct = totalDoses ? Math.round((takenDoses / totalDoses) * 100) : 0;
-  const medsList = meds.map(m => {
+  const activeMeds = meds.filter(function (m) {
+    return medBelongsToCurrent(m) && m.archived !== true && m.active !== false;
+  });
+  const medsList = activeMeds.map(function (m) {
     const stock = (m.stock != null && m.stock !== '') ? m.stock + ' бр.' : '—';
-    return `<tr><td>${m.name}</td><td>${m.dose || '—'}</td><td>${(m.times||[]).map(t=>timeLabel(t)).join(', ')}</td><td>${stock}</td></tr>`;
+    return '<tr><td>' + m.name + '</td><td>' + (m.dose || '—') + '</td><td>' + ((m.times || []).map(function (t) { return timeLabel(t); }).join(', ') || '—') + '</td><td>' + stock + '</td></tr>';
   }).join('');
 
-  const dayRows = days.filter(d => d.total > 0).map(d => {
+  const dayRows = days.filter(function (d) { return d.total > 0; }).map(function (d) {
     const status = d.taken === d.total ? '✓' : (d.taken === 0 ? '✗' : d.taken + '/' + d.total);
-    return `<tr><td>${d.display}</td><td>${status}</td><td>${d.total ? Math.round(d.taken/d.total*100) : 0}%</td></tr>`;
+    return '<tr><td>' + d.display + '</td><td>' + status + '</td><td>' + (d.total ? Math.round(d.taken / d.total * 100) : 0) + '%</td></tr>';
   }).join('');
 
-  const html = `<!DOCTYPE html><html lang="bg"><head><meta charset="UTF-8"><title>PillFlow справка – ${name}</title>
-  <style>
-    body{font-family:system-ui,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#0f172a}
-    h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:24px 0 8px;color:#0369a1}
-    .meta{color:#64748b;font-size:13px;margin-bottom:20px}
-    table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px}
-    th,td{border:1px solid #e2e8f0;padding:8px;text-align:left}
-    th{background:#f8fafc}
-    .summary{display:flex;gap:12px;margin:16px 0}
-    .card{flex:1;border:1px solid #e2e8f0;border-radius:12px;padding:12px;text-align:center}
-    .card b{display:block;font-size:22px;color:#0284c7}
-    @media print{button{display:none}}
-  </style></head><body>
-  <button onclick="window.print()" style="padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:16px">Печат / Запази PDF</button>
-  <h1>Справка за прием на медикаменти</h1>
-  <p class="meta">Пациент: <b>${name}</b> · Период: последните 30 дни · Генерирано: ${today.toLocaleDateString('bg-BG')} · PillFlow</p>
-  <div class="summary">
-    <div class="card"><b>${pct}%</b>спазване</div>
-    <div class="card"><b>${takenDoses}</b>взети дози</div>
-    <div class="card"><b>${totalDoses - takenDoses}</b>пропуски</div>
-  </div>
-  <h2>Медикаменти</h2>
-  <table><thead><tr><th>Име</th><th>Доза</th><th>Време</th><th>Наличност</th></tr></thead><tbody>${medsList || '<tr><td colspan=4>Няма</td></tr>'}</tbody></table>
-  <h2>Дневен преглед (30 дни)</h2>
-  <table><thead><tr><th>Дата</th><th>Статус</th><th>%</th></tr></thead><tbody>${dayRows || '<tr><td colspan=3>Няма данни</td></tr>'}</tbody></table>
-  <p class="meta">Тази справка е генерирана от PillFlow и е информативна. Не замества медицинска документация.</p>
-  </body></html>`;
+  const periodLabel = from.toLocaleDateString('bg-BG') + ' – ' + to.toLocaleDateString('bg-BG');
+  const html = '<!DOCTYPE html><html lang="bg"><head><meta charset="UTF-8"><title>PillFlow справка – ' + name + '</title>' +
+  '<style>' +
+  'body{font-family:system-ui,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#0f172a}' +
+  'h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:24px 0 8px;color:#0369a1}' +
+  '.meta{color:#64748b;font-size:13px;margin-bottom:20px}' +
+  'table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px}' +
+  'th,td{border:1px solid #e2e8f0;padding:8px;text-align:left}' +
+  'th{background:#f8fafc}' +
+  '.summary{display:flex;gap:12px;margin:16px 0}' +
+  '.card{flex:1;border:1px solid #e2e8f0;border-radius:12px;padding:12px;text-align:center}' +
+  '.card b{display:block;font-size:22px;color:#0284c7}' +
+  '@media print{button{display:none}}' +
+  '</style></head><body>' +
+  '<button onclick="window.print()" style="padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:16px">Печат / Запази PDF</button>' +
+  '<h1>Справка за прием на медикаменти</h1>' +
+  '<p class="meta">Пациент: <b>' + name + '</b> · Период: <b>' + periodLabel + '</b> · Генерирано: ' + generated.toLocaleDateString('bg-BG') + ' · PillFlow</p>' +
+  '<div class="summary">' +
+  '<div class="card"><b>' + pct + '%</b>спазване</div>' +
+  '<div class="card"><b>' + takenDoses + '</b>взети дози</div>' +
+  '<div class="card"><b>' + (totalDoses - takenDoses) + '</b>пропуски</div>' +
+  '</div>' +
+  '<h2>Медикаменти</h2>' +
+  '<table><thead><tr><th>Име</th><th>Доза</th><th>Време</th><th>Наличност</th></tr></thead><tbody>' + (medsList || '<tr><td colspan=4>Няма</td></tr>') + '</tbody></table>' +
+  '<h2>Дневен преглед</h2>' +
+  '<table><thead><tr><th>Дата</th><th>Статус</th><th>%</th></tr></thead><tbody>' + (dayRows || '<tr><td colspan=3>Няма данни</td></tr>') + '</tbody></table>' +
+  '<p class="meta">Информативна справка от PillFlow. Не замества медицинска документация.</p>' +
+  '</body></html>';
 
   const w = window.open('', '_blank');
   if (!w) { alert('Разреши pop-up за справката'); return; }
   w.document.write(html);
   w.document.close();
 }
+
+function generatePrintPlanner(from, to) {
+  if (!from || !to) {
+    openReportModal('planner');
+    return;
+  }
+  const name = reportPatientName();
+  const generated = new Date();
+  var dayBlocks = [];
+
+  eachDateInRange(from, to, function (d) {
+    var dayMeds = getMedsForDate(d);
+    if (!dayMeds.length) return;
+    // group by time
+    var byTime = {};
+    dayMeds.forEach(function (med) {
+      var times = (med.times && med.times.length) ? med.times : ['morning'];
+      times.forEach(function (slot) {
+        if (!byTime[slot]) byTime[slot] = [];
+        byTime[slot].push(med);
+      });
+    });
+    var ordered = typeof sortTimeKeys === 'function' ? sortTimeKeys(Object.keys(byTime)) : Object.keys(byTime);
+    var rows = '';
+    ordered.forEach(function (slot) {
+      byTime[slot].forEach(function (med) {
+        var label = (typeof timeLabelWithClock === 'function' ? timeLabelWithClock(slot) : timeLabel(slot)) || slot;
+        rows += '<tr>' +
+          '<td class="cb">☐</td>' +
+          '<td class="time">' + label + '</td>' +
+          '<td><b>' + med.name + '</b>' + (med.dose ? ' <span class="dose">' + med.dose + '</span>' : '') +
+          (med.condition ? '<div class="note">' + (CONDITION_LABELS[med.condition] || med.condition) + '</div>' : '') +
+          '</td></tr>';
+      });
+    });
+    var display = d.toLocaleDateString('bg-BG', { weekday: 'long', day: 'numeric', month: 'long' });
+    dayBlocks.push(
+      '<div class="day">' +
+      '<div class="day-head">' + display + '</div>' +
+      '<table><thead><tr><th style="width:28px"></th><th style="width:90px">Час</th><th>Лекарство</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div>'
+    );
+  });
+
+  var periodLabel = from.toLocaleDateString('bg-BG') + ' – ' + to.toLocaleDateString('bg-BG');
+  var html = '<!DOCTYPE html><html lang="bg"><head><meta charset="UTF-8"><title>PillFlow планер – ' + name + '</title>' +
+  '<style>' +
+  'body{font-family:system-ui,sans-serif;max-width:720px;margin:20px auto;padding:0 12px;color:#0f172a}' +
+  'h1{font-size:20px;margin:0 0 4px}' +
+  '.meta{color:#64748b;font-size:12px;margin-bottom:16px}' +
+  '.day{break-inside:avoid;page-break-inside:avoid;margin-bottom:18px;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden}' +
+  '.day-head{background:#0ea5e9;color:#fff;font-weight:700;padding:8px 12px;font-size:14px;text-transform:capitalize}' +
+  'table{width:100%;border-collapse:collapse;font-size:13px}' +
+  'th,td{border-top:1px solid #e2e8f0;padding:10px 8px;text-align:left;vertical-align:middle}' +
+  'th{background:#f8fafc;font-size:11px;color:#64748b}' +
+  '.cb{font-size:18px;width:28px;text-align:center;color:#94a3b8}' +
+  '.time{color:#0369a1;font-weight:600;white-space:nowrap}' +
+  '.dose{color:#64748b;font-weight:400}' +
+  '.note{font-size:11px;color:#94a3b8;margin-top:2px}' +
+  '@media print{button{display:none} body{margin:0;max-width:none} .day{border-color:#94a3b8}}' +
+  '</style></head><body>' +
+  '<button onclick="window.print()" style="padding:10px 16px;border-radius:8px;background:#7c3aed;color:#fff;border:0;font-weight:600;cursor:pointer;margin-bottom:16px">Печат / Запази PDF</button>' +
+  '<h1>📋 Планер – ' + name + '</h1>' +
+  '<p class="meta">Период: <b>' + periodLabel + '</b> · Генерирано: ' + generated.toLocaleDateString('bg-BG') + ' · PillFlow</p>' +
+  (dayBlocks.length ? dayBlocks.join('') : '<p>Няма планирани хапчета в този период.</p>') +
+  '<p class="meta" style="margin-top:24px">Отбелязвай на хартия ☐ → ☑. За синхронизация с приложението отвори PillFlow.</p>' +
+  '</body></html>';
+
+  var w = window.open('', '_blank');
+  if (!w) { alert('Разреши pop-up за планера'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
 
 
 
