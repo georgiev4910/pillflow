@@ -157,9 +157,11 @@ let currentMemberId = 'self';
 let _memberAvatar = '🧒';
 let householdId = null;
 let householdCode = null;
-let householdPeers = []; // [{uid, name, avatar, shareWithHousehold}]
+let householdPeers = []; // [{uid, name, avatar, shareWithHousehold, profiles:[]}]
+let householdSharedProfiles = []; // pets/people published by peers: {ownerUid, ownerName, id, name, type, avatar, ...}
 let shareWithHousehold = true;
 let viewingRemoteUid = null; // when viewing another user's shared profile
+let viewingRemoteMemberMeta = null; // {id, name, avatar, type} when viewing peer's Max etc.
 let unsubRemoteMeds = null;
 let unsubRemoteLogs = null;
 
@@ -171,14 +173,24 @@ let unsubRemoteLogs = null;
 
 
 function getCurrentMember() {
+  if (viewingRemoteUid) {
+    if (currentMemberId && currentMemberId !== 'self') {
+      var sp = householdSharedProfiles.find(function (x) {
+        return x.ownerUid === viewingRemoteUid && x.id === currentMemberId;
+      });
+      if (sp) return { id: sp.id, name: sp.name, type: sp.type || 'pet', avatar: sp.avatar || '🐶', breed: sp.breed, weight: sp.weight, birthDate: sp.birthDate };
+      if (viewingRemoteMemberMeta) return viewingRemoteMemberMeta;
+    }
+    var peer = householdPeers.find(function (p) { return p.uid === viewingRemoteUid; });
+    if (peer) return { id: 'self', name: peer.name, type: 'person', avatar: peer.avatar || '👤' };
+  }
   return members.find(function (m) { return m.id === currentMemberId; }) || members[0];
 }
 
 function medBelongsToCurrent(med) {
-  // Remote household mate: show all their meds (incl. pet profiles on their account)
-  if (viewingRemoteUid) return true;
+  // Always scope to active profile (self / Max / remote Max under peer)
   var mid = med.memberId || 'self';
-  return mid === currentMemberId;
+  return mid === (currentMemberId || 'self');
 }
 
 function activeMeds() {
@@ -434,7 +446,10 @@ function startListeners() {
         logs = {};
         snap.forEach(doc => {
           var parsed = parseLogDocId(doc.id);
-          if (viewingRemoteUid || currentMemberId === 'self') {
+          var wantSelf = !currentMemberId || currentMemberId === 'self';
+          if (wantSelf) {
+            // only plain date docs (owner self), not pet docs
+            if (parsed.memberId && parsed.memberId !== 'self') return;
             if (!logs[parsed.dateStr]) logs[parsed.dateStr] = {};
             Object.assign(logs[parsed.dateStr], doc.data());
           } else if (parsed.memberId === currentMemberId) {
@@ -3449,53 +3464,79 @@ function randomHouseholdCode() {
 function renderHouseholdSettings() {
   var listEl = document.getElementById('household-members-list');
   if (listEl) {
-    listEl.innerHTML = members.map(function (mem) {
+    var cards = members.map(function (mem) {
       if (mem.id === 'self') {
-        return '<div class="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/40">' +
-          '<span class="text-xl">' + (mem.avatar || profile.avatar || '👤') + '</span>' +
-          '<div class="flex-1 min-w-0"><p class="text-sm font-semibold truncate">' + (profile.name || mem.name || 'Аз') + '</p>' +
-          '<p class="text-[11px] text-slate-400">Ти (основен профил)</p></div></div>';
+        return '<div class="flex items-center gap-3 p-3 rounded-2xl bg-primary-50/80 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800/40">' +
+          '<div class="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center text-2xl shadow-sm">' + (profile.avatar || mem.avatar || '👤') + '</div>' +
+          '<div class="flex-1 min-w-0"><p class="text-sm font-bold truncate">' + (profile.name || mem.name || 'Аз') + '</p>' +
+          '<p class="text-[11px] text-primary-600 dark:text-primary-300">Ти · основен профил</p></div></div>';
       }
       var on = !!mem.showOnMyCalendar;
       var cdOn = mem.showCountdowns !== false;
       var cdMine = !!mem.showCountdownOnMyProfile;
-      return '<div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/40 space-y-2">' +
+      return '<div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-700/40 border border-slate-100 dark:border-slate-700 space-y-2.5">' +
         '<div class="flex items-center gap-3">' +
-        '<span class="text-xl">' + (mem.avatar || '👤') + '</span>' +
+        '<div class="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center text-2xl shadow-sm">' + (mem.avatar || '👤') + '</div>' +
         '<div class="flex-1 min-w-0">' +
-        '<p class="text-sm font-semibold truncate">' + mem.name + '</p>' +
-        '<p class="text-[11px] text-slate-400">' + (mem.type === 'pet' ? 'Любимец' : 'Профил') +
+        '<p class="text-sm font-bold truncate">' + mem.name + '</p>' +
+        '<p class="text-[11px] text-slate-400">' + (mem.type === 'pet' ? '🐾 Любимец' : '👤 Профил') +
         (mem.breed ? ' · ' + mem.breed : '') + '</p></div>' +
-        '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-xs text-primary-500 px-2 py-1">✎</button></div>' +
-        '<div class="flex items-center justify-between gap-2 pl-1">' +
-        '<span class="text-[11px] text-slate-500">📌 В моя календар</span>' + pinToggleHtml(mem.id, on, 'sm') + '</div>' +
-        '<div class="flex items-center justify-between gap-2 pl-1">' +
-        '<span class="text-[11px] text-slate-500">⏳ Обратно броене тук</span>' +
+        '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-xs font-medium text-primary-500 px-2.5 py-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30">✎ Редакция</button></div>' +
+        '<div class="grid gap-2 pt-1 border-t border-slate-100 dark:border-slate-600/50">' +
+        '<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">📌 В моя календар</span>' + pinToggleHtml(mem.id, on, 'sm') + '</div>' +
+        '<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">⏳ Обратно броене тук</span>' +
         '<button type="button" onclick="toggleMemberShowCountdowns(\'' + mem.id + '\')" class="relative w-11 h-6 flex-shrink-0 rounded-full transition ' + (cdOn ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform:' + (cdOn ? 'translateX(18px)' : 'translateX(0)') + '"></span></button></div>' +
-        '<div class="flex items-center justify-between gap-2 pl-1">' +
-        '<span class="text-[11px] text-slate-500">⏳ Countdown и при „Аз“</span>' +
-        '<button type="button" onclick="toggleMemberCountdownOnMyProfile(\'' + mem.id + '\')" class="relative w-11 h-6 flex-shrink-0 rounded-full transition ' + (cdMine ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform:' + (cdMine ? 'translateX(18px)' : 'translateX(0)') + '"></span></button></div></div>';
-    }).join('');
+        '<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">⏳ Countdown и при „Аз“</span>' +
+        '<button type="button" onclick="toggleMemberCountdownOnMyProfile(\'' + mem.id + '\')" class="relative w-11 h-6 flex-shrink-0 rounded-full transition ' + (cdMine ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform:' + (cdMine ? 'translateX(18px)' : 'translateX(0)') + '"></span></button></div>' +
+        '</div></div>';
+    });
+    listEl.innerHTML = cards.join('');
   }
+
+  // Shared peers list
+  var peersEl = document.getElementById('household-peers-list');
+  if (peersEl) {
+    if (!householdPeers.length && !(householdSharedProfiles && householdSharedProfiles.length)) {
+      peersEl.innerHTML = '<p class="text-xs text-slate-400 py-1">Още няма споделени профили от други.</p>';
+    } else {
+      var ph = '';
+      householdPeers.forEach(function (p) {
+        ph += '<div class="flex items-center gap-3 p-3 rounded-2xl bg-emerald-50/80 dark:bg-emerald-900/15 border border-emerald-100 dark:border-emerald-800/30">' +
+          '<div class="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center text-xl">' + (p.avatar || '👤') + '</div>' +
+          '<div class="flex-1 min-w-0"><p class="text-sm font-semibold truncate">' + (p.name || 'Член') + '</p>' +
+          '<p class="text-[11px] text-emerald-700 dark:text-emerald-300">Споделен акаунт</p></div></div>';
+        (p.profiles || []).forEach(function (pr) {
+          ph += '<div class="flex items-center gap-3 p-2.5 pl-5 rounded-xl bg-slate-50 dark:bg-slate-700/30 ml-2 border-l-2 border-emerald-300 dark:border-emerald-700">' +
+            '<span class="text-lg">' + (pr.avatar || '🐶') + '</span>' +
+            '<div class="flex-1 min-w-0"><p class="text-sm font-medium truncate">' + (pr.name || '') + '</p>' +
+            '<p class="text-[10px] text-slate-400">' + (pr.type === 'pet' ? 'Любимец' : 'Профил') + ' на ' + (p.name || '') + '</p></div></div>';
+        });
+      });
+      peersEl.innerHTML = ph;
+    }
+  }
+
   var status = document.getElementById('household-status');
   var actions = document.getElementById('household-actions');
-  if (!status) return;
-  if (!firebaseReady) {
-    status.textContent = 'Споделянето с друг акаунт изисква Firebase (облак).';
-    if (actions) actions.classList.add('hidden');
-    return;
+  if (status) {
+    if (!firebaseReady) {
+      status.innerHTML = '<p class="text-sm text-slate-500">Споделянето изисква Firebase (облак).</p>';
+      if (actions) actions.classList.add('hidden');
+    } else if (householdId && householdCode) {
+      status.innerHTML =
+        '<div class="flex items-center justify-between gap-2 mb-2">' +
+        '<div><p class="text-xs text-slate-400 uppercase font-semibold">Код за покана</p>' +
+        '<p class="font-mono text-lg font-bold text-primary-600 tracking-wide">' + householdCode + '</p></div>' +
+        '<button type="button" onclick="navigator.clipboard && navigator.clipboard.writeText(\'' + householdCode + '\')" class="text-xs px-3 py-1.5 rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-600 font-medium">Копирай</button></div>' +
+        '<p class="text-xs text-slate-500">Сподели кода с Нина. Макс и локалните профили се виждат автоматично, когато акаунтът е споделен.</p>' +
+        '<button type="button" onclick="leaveHousehold()" class="text-xs text-red-500 mt-3 hover:underline">Напусни домакинството</button>';
+      if (actions) actions.classList.add('hidden');
+    } else {
+      status.innerHTML = '<p class="text-sm text-slate-500">Не си в домакинство. Създай код или се присъедини.</p>';
+      if (actions) actions.classList.remove('hidden');
+    }
   }
-  if (actions) actions.classList.remove('hidden');
-  if (householdId && householdCode) {
-    var peerNames = householdPeers.map(function (p) { return p.name || 'Член'; }).join(', ');
-    status.innerHTML = '<p class="font-medium text-slate-700 dark:text-slate-200">Код: <span class="font-mono text-primary-600">' + householdCode + '</span></p>' +
-      '<p class="text-xs mt-1">Членове: ' + (peerNames || 'само ти') + '</p>' +
-      '<button type="button" onclick="leaveHousehold()" class="text-xs text-red-500 mt-2 hover:underline">Напусни домакинството</button>';
-    if (actions) actions.classList.add('hidden');
-  } else {
-    status.textContent = 'Не си в домакинство. Създай или се присъедини с код.';
-    if (actions) actions.classList.remove('hidden');
-  }
+
   function syncShareToggle(togId, knobId) {
     var knob = document.getElementById(knobId);
     var tog = document.getElementById(togId);
@@ -3649,6 +3690,7 @@ function toggleShareWithHousehold() {
     update['members.' + currentUser.uid + '.shareWithHousehold'] = shareWithHousehold;
     update['members.' + currentUser.uid + '.name'] = (profile && profile.name) || currentUser.displayName || 'Аз';
     update['members.' + currentUser.uid + '.avatar'] = (profile && profile.avatar) || '👤';
+    update['members.' + currentUser.uid + '.profiles'] = profilesForHouseholdPublish();
     db.collection('households').doc(householdId).update(update).catch(function () {});
   }
 }
@@ -3687,21 +3729,43 @@ function subscribeHouseholdDoc(hid) {
     }
     var data = doc.data();
     householdCode = data.code || householdCode;
-    var members = data.members || {};
+    var memMap = data.members || {};
     householdPeers = [];
-    Object.keys(members).forEach(function (uid) {
+    householdSharedProfiles = [];
+    Object.keys(memMap).forEach(function (uid) {
       if (uid === currentUser.uid) return;
-      var m = members[uid];
+      var m = memMap[uid];
       if (m && m.shareWithHousehold !== false) {
         householdPeers.push({
           uid: uid,
           name: m.name || 'Член',
           avatar: m.avatar || '👤',
-          shareWithHousehold: true
+          shareWithHousehold: true,
+          profiles: m.profiles || []
+        });
+        (m.profiles || []).forEach(function (pr) {
+          if (!pr || !pr.id) return;
+          householdSharedProfiles.push({
+            ownerUid: uid,
+            ownerName: m.name || 'Член',
+            id: pr.id,
+            name: pr.name || 'Профил',
+            type: pr.type || 'pet',
+            avatar: pr.avatar || '🐶',
+            breed: pr.breed || '',
+            weight: pr.weight || '',
+            birthDate: pr.birthDate || ''
+          });
         });
       }
     });
-    // also update my entry name/avatar occasionally
+    // Publish Max etc. only when local list differs from what household has for me
+    if (shareWithHousehold !== false) {
+      var mine = memMap[currentUser.uid];
+      var remoteProf = JSON.stringify((mine && mine.profiles) || []);
+      var localProf = JSON.stringify(profilesForHouseholdPublish());
+      if (remoteProf !== localProf) syncProfilesToHousehold();
+    }
     renderHouseholdSettings();
     renderMemberMenuList();
     updateMemberSwitchLabel();
@@ -3740,15 +3804,27 @@ function renderMemberMenuList() {
   if (householdPeers && householdPeers.length) {
     html += '<p class="px-4 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase">Домакинство</p>';
     householdPeers.forEach(function (p) {
-      var active = viewingRemoteUid === p.uid;
-      var safeName = String(p.name || 'Член').replace(/'/g, '');
-      var av = String(p.avatar || '👤').replace(/'/g, '');
-      html += '<button type="button" onclick="switchRemoteMember(\'' + p.uid + '\',\'' + safeName + '\',\'' + av + '\')" class="w-full px-4 py-3 text-left text-sm flex items-center gap-3 ' +
+      var active = viewingRemoteUid === p.uid && (!currentMemberId || currentMemberId === 'self');
+      var safeName = String(p.name || 'Член').replace(/'/g, "\\'");
+      var av = String(p.avatar || '👤').replace(/'/g, "\\'");
+      html += '<button type="button" onclick="switchRemoteMember(\'' + p.uid + '\',\'self\',\'' + safeName + '\',\'' + av + '\')" class="w-full px-4 py-3 text-left text-sm flex items-center gap-3 ' +
         (active ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-700') + '">' +
         '<span class="text-lg">' + (p.avatar || '👤') + '</span><span class="flex-1 truncate">' + (p.name || 'Член') + ' <span class="text-[10px] text-slate-400">споделен</span></span>' +
         (active ? '<span class="text-primary-500">✓</span>' : '') + '</button>';
+      (p.profiles || []).forEach(function (pr) {
+        var a2 = viewingRemoteUid === p.uid && currentMemberId === pr.id;
+        var pn = String(pr.name || 'Профил').replace(/'/g, "\\'");
+        var pa = String(pr.avatar || '🐶').replace(/'/g, "\\'");
+        var pid = String(pr.id).replace(/'/g, "\\'");
+        html += '<button type="button" onclick="switchRemoteMember(\'' + p.uid + '\',\'' + pid + '\',\'' + pn + '\',\'' + pa + '\')" class="w-full pl-8 pr-4 py-2.5 text-left text-sm flex items-center gap-3 ' +
+          (a2 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-700') + '">' +
+          '<span class="text-base">' + (pr.avatar || '🐶') + '</span><span class="flex-1 truncate">' + (pr.name || 'Профил') +
+          ' <span class="text-[10px] text-slate-400">' + (pr.type === 'pet' ? 'любимец' : 'профил') + ' · ' + (p.name || '') + '</span></span>' +
+          (a2 ? '<span class="text-primary-500">✓</span>' : '') + '</button>';
+      });
     });
   }
+  list.innerHTML = html;
   list.innerHTML = html;
 }
 
@@ -3756,6 +3832,14 @@ function updateMemberSwitchLabel() {
   var el = document.getElementById('member-switch-label');
   if (!el) return;
   if (viewingRemoteUid) {
+    if (currentMemberId && currentMemberId !== 'self') {
+      var sp = householdSharedProfiles.find(function (x) { return x.ownerUid === viewingRemoteUid && x.id === currentMemberId; });
+      if (sp) { el.textContent = (sp.avatar || '🐶') + ' ' + sp.name; return; }
+      if (viewingRemoteMemberMeta) {
+        el.textContent = (viewingRemoteMemberMeta.avatar || '🐶') + ' ' + viewingRemoteMemberMeta.name;
+        return;
+      }
+    }
     var p = householdPeers.find(function (x) { return x.uid === viewingRemoteUid; });
     if (p) { el.textContent = (p.avatar || '👤') + ' ' + p.name; return; }
   }
@@ -3764,6 +3848,7 @@ function updateMemberSwitchLabel() {
 }
 function switchMember(id) {
   viewingRemoteUid = null;
+  viewingRemoteMemberMeta = null;
   currentMemberId = id;
   try { localStorage.setItem('pillflow_member_' + (currentUser && currentUser.uid), id); } catch (e) {}
   closeMemberMenu();
@@ -3777,16 +3862,23 @@ function switchMember(id) {
   if (typeof renderHouseholdSettings === 'function') renderHouseholdSettings();
 }
 
-function switchRemoteMember(uid, name, avatar) {
+function switchRemoteMember(uid, memberId, name, avatar) {
+  // memberId: 'self' for the peer, or pet/person id like m_xxx
   viewingRemoteUid = uid;
-  currentMemberId = 'self'; // their personal meds
+  currentMemberId = memberId || 'self';
+  viewingRemoteMemberMeta = {
+    id: currentMemberId,
+    name: name || 'Член',
+    avatar: avatar || (currentMemberId === 'self' ? '👤' : '🐶'),
+    type: currentMemberId === 'self' ? 'person' : 'pet'
+  };
   closeMemberMenu();
-  var el = document.getElementById('member-switch-label');
-  if (el) el.textContent = (avatar || '👤') + ' ' + (name || 'Член');
+  updateMemberSwitchLabel();
   startListeners();
   renderMeds();
   renderToday();
   renderCalendar();
+  if (typeof renderProfilePage === 'function') renderProfilePage();
 }
 function selectMemberAvatar(a) {
   _memberAvatar = a;
@@ -3995,6 +4087,33 @@ function saveMemberFromModal() {
   }
   saveNewMember();
 }
+function profilesForHouseholdPublish() {
+  return members.filter(function (m) { return m.id && m.id !== 'self'; }).map(function (m) {
+    return {
+      id: m.id,
+      name: m.name || '',
+      type: m.type || 'person',
+      avatar: m.avatar || '🐶',
+      breed: m.breed || '',
+      weight: m.weight || '',
+      birthDate: m.birthDate || ''
+    };
+  });
+}
+
+/** Publish Max / local profiles into the shared household doc so Nina can see them */
+function syncProfilesToHousehold() {
+  if (!firebaseReady || !db || !currentUser || !householdId) return;
+  var update = {};
+  update['members.' + currentUser.uid + '.profiles'] = profilesForHouseholdPublish();
+  update['members.' + currentUser.uid + '.name'] = (profile && profile.name) || currentUser.displayName || 'Аз';
+  update['members.' + currentUser.uid + '.avatar'] = (profile && profile.avatar) || '👤';
+  update['members.' + currentUser.uid + '.shareWithHousehold'] = shareWithHousehold !== false;
+  db.collection('households').doc(householdId).update(update)
+    .then(function () { console.log('Household profiles synced'); })
+    .catch(function (err) { console.warn('sync profiles', err); });
+}
+
 function persistMembers() {
   if (!currentUser) return;
   try {
@@ -4005,6 +4124,7 @@ function persistMembers() {
       .set({ members: members, updatedAt: new Date().toISOString() }, { merge: true })
       .catch(function (err) { console.warn(err); });
   }
+  syncProfilesToHousehold();
 }
 function loadMembers() {
   if (!currentUser) return;
