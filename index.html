@@ -451,45 +451,59 @@
 
       <!-- TAB: ДОМАКИНСТВО -->
       <div id="tab-household" class="tab-content fade-in">
-        <h2 class="text-xl font-bold mb-1">Домакинство</h2>
-        <p class="text-sm text-slate-400 mb-4">Профили вкъщи и споделяне с друг акаунт</p>
-
-        <!-- Local profiles -->
-        <div class="mb-5">
-          <div class="flex items-center justify-between mb-2 px-0.5">
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">В този акаунт</p>
-          </div>
-          <div id="household-members-list" class="space-y-2.5"></div>
-          <button type="button" onclick="openAddMemberModal()" class="mt-2.5 w-full py-3 rounded-2xl border border-dashed border-slate-300 dark:border-slate-600 text-sm text-primary-600 font-semibold hover:bg-primary-50/50 dark:hover:bg-primary-900/10 transition">+ Добави човек / любимец</button>
+        <div class="mb-4">
+          <h2 class="text-xl font-bold" id="household-title">Домакинство</h2>
+          <p class="text-sm text-slate-400" id="household-subtitle">Активни акаунти и спомагателни профили</p>
         </div>
 
-        <!-- Shared household -->
-        <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-4 space-y-4">
-          <div>
-            <h3 class="font-bold text-base">🔗 Споделено домакинство</h3>
-            <p class="text-xs text-slate-400 mt-0.5">Нина и ти виждате един друг + любимците</p>
+        <!-- Primary people (me + peers) -->
+        <section class="mb-5">
+          <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Членове</p>
+          <div id="household-people-list" class="space-y-2"></div>
+        </section>
+
+        <!-- Helper profiles: Max, pets, kids without accounts -->
+        <section class="mb-5">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Спомагателни профили</p>
+            <button type="button" onclick="openAddMemberModal()" class="text-xs font-semibold text-primary-500">+ Добави</button>
           </div>
-          <div id="household-status" class="text-sm text-slate-500"></div>
-          <div id="household-actions" class="flex flex-col gap-2">
-            <button type="button" onclick="createHousehold()" class="w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold">Създай код за покана</button>
-            <button type="button" onclick="promptJoinHousehold()" class="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-medium">Присъедини се с код</button>
-          </div>
-          <div class="flex items-center justify-between gap-3 pt-1 border-t border-slate-100 dark:border-slate-700">
+          <div id="household-helpers-list" class="space-y-1.5"></div>
+          <p class="text-[11px] text-slate-400 mt-2 px-0.5">Любимци и профили без собствен имейл — споделят се с домакинството.</p>
+        </section>
+
+        <!-- Management accordion at bottom -->
+        <section class="mb-4">
+          <button type="button" id="hh-manage-toggle" onclick="toggleHouseholdManage()" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-left">
             <div class="min-w-0">
-              <p class="text-sm font-medium">Моят акаунт е споделен</p>
-              <p class="text-xs text-slate-400">Вкл. Макс и другите локални профили</p>
+              <p class="text-sm font-semibold">⚙️ Управление</p>
+              <p class="text-[11px] text-slate-400 truncate" id="hh-manage-hint">Код, споделяне, име</p>
             </div>
-            <button type="button" id="share-household-toggle" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 flex-shrink-0 rounded-full bg-slate-200 dark:bg-slate-600 transition">
-              <span id="share-household-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
-            </button>
+            <span id="hh-manage-chevron" class="text-slate-400 text-sm transition-transform">▾</span>
+          </button>
+          <div id="hh-manage-body" class="hidden mt-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+            <div class="p-4 space-y-4">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Име на домакинството</label>
+                <div class="flex gap-2">
+                  <input type="text" id="household-name-input" placeholder="напр. Нашето семейство" class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-sm outline-none">
+                  <button type="button" onclick="saveHouseholdName()" class="px-3 py-2 rounded-xl bg-primary-500 text-white text-xs font-semibold">Запази</button>
+                </div>
+              </div>
+              <div id="household-status" class="text-sm"></div>
+              <div id="household-actions" class="flex flex-col gap-2"></div>
+              <div class="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-700">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium">Сподели моя акаунт</p>
+                  <p class="text-[11px] text-slate-400">Вкл. Макс и спомагателните профили</p>
+                </div>
+                <button type="button" id="share-household-toggle" onclick="toggleShareWithHousehold()" class="relative w-12 h-7 flex-shrink-0 rounded-full bg-slate-200 dark:bg-slate-600 transition">
+                  <span id="share-household-knob" class="absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"></span>
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-
-        <!-- What others shared with me -->
-        <div class="mb-2">
-          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 px-0.5">От домакинството</p>
-          <div id="household-peers-list" class="space-y-2"></div>
-        </div>
+        </section>
       </div>
 
       <!-- TAB: НАСТРОЙКИ -->
