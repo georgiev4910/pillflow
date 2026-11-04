@@ -3461,79 +3461,174 @@ function randomHouseholdCode() {
   return s;
 }
 
-function renderHouseholdSettings() {
-  var listEl = document.getElementById('household-members-list');
-  if (listEl) {
-    var cards = members.map(function (mem) {
-      if (mem.id === 'self') {
-        return '<div class="flex items-center gap-3 p-3 rounded-2xl bg-primary-50/80 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800/40">' +
-          '<div class="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center text-2xl shadow-sm">' + (profile.avatar || mem.avatar || '👤') + '</div>' +
-          '<div class="flex-1 min-w-0"><p class="text-sm font-bold truncate">' + (profile.name || mem.name || 'Аз') + '</p>' +
-          '<p class="text-[11px] text-primary-600 dark:text-primary-300">Ти · основен профил</p></div></div>';
-      }
-      var on = !!mem.showOnMyCalendar;
-      var cdOn = mem.showCountdowns !== false;
-      var cdMine = !!mem.showCountdownOnMyProfile;
-      return '<div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-700/40 border border-slate-100 dark:border-slate-700 space-y-2.5">' +
-        '<div class="flex items-center gap-3">' +
-        '<div class="w-11 h-11 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center text-2xl shadow-sm">' + (mem.avatar || '👤') + '</div>' +
-        '<div class="flex-1 min-w-0">' +
-        '<p class="text-sm font-bold truncate">' + mem.name + '</p>' +
-        '<p class="text-[11px] text-slate-400">' + (mem.type === 'pet' ? '🐾 Любимец' : '👤 Профил') +
-        (mem.breed ? ' · ' + mem.breed : '') + '</p></div>' +
-        '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-xs font-medium text-primary-500 px-2.5 py-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30">✎ Редакция</button></div>' +
-        '<div class="grid gap-2 pt-1 border-t border-slate-100 dark:border-slate-600/50">' +
-        '<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">📌 В моя календар</span>' + pinToggleHtml(mem.id, on, 'sm') + '</div>' +
-        '<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">⏳ Обратно броене тук</span>' +
-        '<button type="button" onclick="toggleMemberShowCountdowns(\'' + mem.id + '\')" class="relative w-11 h-6 flex-shrink-0 rounded-full transition ' + (cdOn ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform:' + (cdOn ? 'translateX(18px)' : 'translateX(0)') + '"></span></button></div>' +
-        '<div class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500">⏳ Countdown и при „Аз“</span>' +
-        '<button type="button" onclick="toggleMemberCountdownOnMyProfile(\'' + mem.id + '\')" class="relative w-11 h-6 flex-shrink-0 rounded-full transition ' + (cdMine ? 'bg-violet-500' : 'bg-slate-200 dark:bg-slate-600') + '"><span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform:' + (cdMine ? 'translateX(18px)' : 'translateX(0)') + '"></span></button></div>' +
-        '</div></div>';
+function toggleHouseholdManage() {
+  var body = document.getElementById('hh-manage-body');
+  var chev = document.getElementById('hh-manage-chevron');
+  if (!body) return;
+  body.classList.toggle('hidden');
+  if (chev) chev.style.transform = body.classList.contains('hidden') ? '' : 'rotate(180deg)';
+}
+
+function saveHouseholdName() {
+  var inp = document.getElementById('household-name-input');
+  var name = inp ? inp.value.trim() : '';
+  if (!householdId || !firebaseReady || !db) {
+    alert('Няма активно домакинство');
+    return;
+  }
+  db.collection('households').doc(householdId).update({ name: name || null })
+    .then(function () {
+      window._householdName = name;
+      renderHouseholdSettings();
+    })
+    .catch(function (err) { alert(err.message); });
+}
+
+function removePeerFromHousehold(uid) {
+  if (!householdId || !currentUser || !uid) return;
+  if (window._householdOwnerUid && window._householdOwnerUid !== currentUser.uid) {
+    alert('Само създателят на домакинството може да премахва членове.');
+    return;
+  }
+  var peer = householdPeers.find(function (p) { return p.uid === uid; });
+  var label = peer ? peer.name : 'този член';
+  if (!confirm('Премахни ' + label + ' от домакинството?')) return;
+  var href = db.collection('households').doc(householdId);
+  href.get().then(function (doc) {
+    if (!doc.exists) return;
+    var data = doc.data();
+    var uids = (data.memberUids || []).filter(function (u) { return u !== uid; });
+    var membersMap = data.members || {};
+    delete membersMap[uid];
+    return href.update({ memberUids: uids, members: membersMap }).then(function () {
+      // clear their settings link best-effort
+      return db.collection('users').doc(uid).collection('settings').doc('household')
+        .set({ householdId: null, code: null }, { merge: true }).catch(function () {});
     });
-    listEl.innerHTML = cards.join('');
+  }).then(function () {
+    alert('Премахнат от домакинството');
+  }).catch(function (err) { alert(err.message); });
+}
+
+function renderHouseholdSettings() {
+  var title = document.getElementById('household-title');
+  var sub = document.getElementById('household-subtitle');
+  var hhName = window._householdName || '';
+  if (title) title.textContent = hhName || 'Домакинство';
+  if (sub) {
+    var nPeople = 1 + (householdPeers ? householdPeers.length : 0);
+    var nHelp = members.filter(function (m) { return m.id !== 'self'; }).length;
+    householdSharedProfiles.forEach(function () { nHelp++; });
+    // dedupe count roughly
+    nHelp = members.filter(function (m) { return m.id !== 'self'; }).length;
+    householdPeers.forEach(function (p) { nHelp += (p.profiles || []).length; });
+    sub.textContent = nPeople + ' член' + (nPeople === 1 ? '' : 'а') +
+      (nHelp ? ' · ' + nHelp + ' спомагателн' + (nHelp === 1 ? 'и' : 'и') : '');
   }
 
-  // Shared peers list
-  var peersEl = document.getElementById('household-peers-list');
-  if (peersEl) {
-    if (!householdPeers.length && !(householdSharedProfiles && householdSharedProfiles.length)) {
-      peersEl.innerHTML = '<p class="text-xs text-slate-400 py-1">Още няма споделени профили от други.</p>';
-    } else {
-      var ph = '';
-      householdPeers.forEach(function (p) {
-        ph += '<div class="flex items-center gap-3 p-3 rounded-2xl bg-emerald-50/80 dark:bg-emerald-900/15 border border-emerald-100 dark:border-emerald-800/30">' +
-          '<div class="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center text-xl">' + (p.avatar || '👤') + '</div>' +
-          '<div class="flex-1 min-w-0"><p class="text-sm font-semibold truncate">' + (p.name || 'Член') + '</p>' +
-          '<p class="text-[11px] text-emerald-700 dark:text-emerald-300">Споделен акаунт</p></div></div>';
-        (p.profiles || []).forEach(function (pr) {
-          ph += '<div class="flex items-center gap-3 p-2.5 pl-5 rounded-xl bg-slate-50 dark:bg-slate-700/30 ml-2 border-l-2 border-emerald-300 dark:border-emerald-700">' +
-            '<span class="text-lg">' + (pr.avatar || '🐶') + '</span>' +
-            '<div class="flex-1 min-w-0"><p class="text-sm font-medium truncate">' + (pr.name || '') + '</p>' +
-            '<p class="text-[10px] text-slate-400">' + (pr.type === 'pet' ? 'Любимец' : 'Профил') + ' на ' + (p.name || '') + '</p></div></div>';
-        });
+  var peopleEl = document.getElementById('household-people-list');
+  if (peopleEl) {
+    var peopleHtml = '';
+    // Me
+    var myName = (profile && profile.name) || (currentUser && currentUser.displayName) || 'Аз';
+    var myAv = (profile && profile.avatar) || '👤';
+    var myEmail = (currentUser && currentUser.email) || '';
+    peopleHtml += personCardHtml({
+      key: 'me',
+      name: myName,
+      avatar: myAv,
+      subtitle: 'Ти' + (myEmail ? ' · ' + myEmail : ''),
+      badge: 'основен',
+      badgeClass: 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300',
+      expandable: true,
+      details: profileDetailsHtml(profile),
+      actions: '<button type="button" onclick="openProfileEditModal()" class="text-xs text-primary-500 font-medium">Редакция</button>'
+    });
+    // Peers
+    (householdPeers || []).forEach(function (p) {
+      var isOwner = window._householdOwnerUid === currentUser.uid;
+      var acts = '';
+      if (isOwner) {
+        acts = '<button type="button" onclick="removePeerFromHousehold(\'' + p.uid + '\')" class="text-xs text-red-500 font-medium">Премахни</button>';
+      }
+      peopleHtml += personCardHtml({
+        key: 'peer-' + p.uid,
+        name: p.name || 'Член',
+        avatar: p.avatar || '👤',
+        subtitle: 'Споделен акаунт',
+        badge: 'член',
+        badgeClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+        expandable: true,
+        details: '<p class="text-xs text-slate-500">Активен акаунт в домакинството. Може да вижда споделените ти хапчета и спомагателни профили.</p>' +
+          '<button type="button" onclick="switchRemoteMember(\'' + p.uid + '\',\'self\',\'' + String(p.name || '').replace(/'/g, "\\'") + '\',\'' + String(p.avatar || '👤').replace(/'/g, "\\'") + '\')" class="mt-2 text-xs font-semibold text-primary-500">Отвори профила →</button>',
+        actions: acts
       });
-      peersEl.innerHTML = ph;
+    });
+    if (!(householdPeers && householdPeers.length) && !householdId) {
+      peopleHtml += '<p class="text-xs text-slate-400 px-1">Покани някого чрез Управление → код за покана.</p>';
     }
+    peopleEl.innerHTML = peopleHtml;
   }
 
+  // Helpers: local Max + remote shared profiles (not people accounts)
+  var helpEl = document.getElementById('household-helpers-list');
+  if (helpEl) {
+    var h = '';
+    members.filter(function (m) { return m.id !== 'self'; }).forEach(function (mem) {
+      h += helperRowHtml(mem, false);
+    });
+    (householdSharedProfiles || []).forEach(function (sp) {
+      // skip if somehow duplicate of local
+      h += helperRowHtml({
+        id: sp.id,
+        name: sp.name,
+        avatar: sp.avatar,
+        type: sp.type,
+        breed: sp.breed,
+        weight: sp.weight,
+        _remote: true,
+        ownerUid: sp.ownerUid,
+        ownerName: sp.ownerName
+      }, true);
+    });
+    if (!h) {
+      h = '<div class="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 px-3 py-4 text-center text-xs text-slate-400">Няма спомагателни профили — добави любимец или дете</div>';
+    }
+    helpEl.innerHTML = h;
+  }
+
+  // Manage section
   var status = document.getElementById('household-status');
   var actions = document.getElementById('household-actions');
+  var hint = document.getElementById('hh-manage-hint');
+  var nameInp = document.getElementById('household-name-input');
+  if (nameInp && document.activeElement !== nameInp) nameInp.value = hhName || '';
+
+  if (hint) {
+    if (householdCode) hint.textContent = (hhName ? hhName + ' · ' : '') + 'код ' + householdCode;
+    else hint.textContent = 'Код, споделяне, име';
+  }
+
   if (status) {
     if (!firebaseReady) {
-      status.innerHTML = '<p class="text-sm text-slate-500">Споделянето изисква Firebase (облак).</p>';
-      if (actions) actions.classList.add('hidden');
+      status.innerHTML = '<p class="text-slate-500 text-sm">Нужен е облачен акаунт.</p>';
+      if (actions) actions.innerHTML = '';
     } else if (householdId && householdCode) {
       status.innerHTML =
-        '<div class="flex items-center justify-between gap-2 mb-2">' +
-        '<div><p class="text-xs text-slate-400 uppercase font-semibold">Код за покана</p>' +
-        '<p class="font-mono text-lg font-bold text-primary-600 tracking-wide">' + householdCode + '</p></div>' +
-        '<button type="button" onclick="navigator.clipboard && navigator.clipboard.writeText(\'' + householdCode + '\')" class="text-xs px-3 py-1.5 rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-600 font-medium">Копирай</button></div>' +
-        '<p class="text-xs text-slate-500">Сподели кода с Нина. Макс и локалните профили се виждат автоматично, когато акаунтът е споделен.</p>' +
-        '<button type="button" onclick="leaveHousehold()" class="text-xs text-red-500 mt-3 hover:underline">Напусни домакинството</button>';
-      if (actions) actions.classList.add('hidden');
+        '<div class="flex items-center justify-between gap-2">' +
+        '<div><p class="text-[11px] text-slate-400 uppercase font-semibold">Код</p>' +
+        '<p class="font-mono text-base font-bold text-primary-600">' + householdCode + '</p></div>' +
+        '<button type="button" onclick="navigator.clipboard&&navigator.clipboard.writeText(\'' + householdCode + '\')" class="text-xs px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 font-medium">Копирай</button></div>';
+      if (actions) {
+        actions.innerHTML = '<button type="button" onclick="leaveHousehold()" class="w-full py-2 rounded-xl text-sm text-red-500 border border-red-200 dark:border-red-900/40 font-medium">Напусни домакинството</button>';
+      }
     } else {
-      status.innerHTML = '<p class="text-sm text-slate-500">Не си в домакинство. Създай код или се присъедини.</p>';
-      if (actions) actions.classList.remove('hidden');
+      status.innerHTML = '<p class="text-sm text-slate-500">Все още няма споделено домакинство.</p>';
+      if (actions) {
+        actions.innerHTML =
+          '<button type="button" onclick="createHousehold()" class="w-full py-2.5 rounded-xl bg-primary-500 text-white text-sm font-semibold">Създай код за покана</button>' +
+          '<button type="button" onclick="promptJoinHousehold()" class="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm font-medium">Присъедини се с код</button>';
+      }
     }
   }
 
@@ -3555,6 +3650,63 @@ function renderHouseholdSettings() {
   syncShareToggle('share-household-toggle-menu', 'share-household-knob-menu');
 }
 
+function profileDetailsHtml(p) {
+  p = p || {};
+  var rows = [];
+  if (p.blood) rows.push('Кръвна група: <b>' + p.blood + '</b>');
+  if (p.weight) rows.push('Тегло: <b>' + p.weight + '</b>');
+  if (p.height) rows.push('Ръст: <b>' + p.height + '</b>');
+  if (p.allergies) rows.push('Алергии: <b>' + p.allergies + '</b>');
+  return rows.length
+    ? '<div class="text-xs text-slate-600 dark:text-slate-300 space-y-1">' + rows.map(function (r) { return '<p>' + r + '</p>'; }).join('') + '</div>'
+    : '<p class="text-xs text-slate-400">Няма попълнени здравни данни</p>';
+}
+
+function personCardHtml(opts) {
+  var id = 'hh-exp-' + opts.key;
+  return '<div class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">' +
+    '<div class="flex items-center gap-3 p-3">' +
+    '<div class="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-2xl flex-shrink-0">' + (opts.avatar || '👤') + '</div>' +
+    '<div class="flex-1 min-w-0">' +
+    '<div class="flex items-center gap-2 flex-wrap"><p class="text-sm font-bold truncate">' + opts.name + '</p>' +
+    '<span class="text-[10px] px-1.5 py-0.5 rounded-md font-medium ' + (opts.badgeClass || '') + '">' + (opts.badge || '') + '</span></div>' +
+    '<p class="text-[11px] text-slate-400 truncate">' + (opts.subtitle || '') + '</p></div>' +
+    (opts.actions || '') +
+    (opts.expandable ? '<button type="button" onclick="toggleHhExpand(\'' + id + '\')" class="text-slate-400 text-xs px-1">▾</button>' : '') +
+    '</div>' +
+    (opts.expandable ? '<div id="' + id + '" class="hidden px-3 pb-3 border-t border-slate-100 dark:border-slate-700 pt-2">' + (opts.details || '') + '</div>' : '') +
+    '</div>';
+}
+
+function toggleHhExpand(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden');
+}
+
+function helperRowHtml(mem, isRemote) {
+  var title = mem.name || 'Профил';
+  var sub = (mem.type === 'pet' ? '🐾 ' : '👤 ') + (mem.breed || (mem.type === 'pet' ? 'Любимец' : 'Профил'));
+  if (isRemote) sub += ' · ' + (mem.ownerName || 'споделен');
+  var openBtn;
+  if (isRemote) {
+    openBtn = '<button type="button" onclick="switchRemoteMember(\'' + mem.ownerUid + '\',\'' + mem.id + '\',\'' + String(title).replace(/'/g, "\\'") + '\',\'' + String(mem.avatar || '🐶').replace(/'/g, "\\'") + '\')" class="text-[11px] text-primary-500 font-medium">Отвори</button>';
+  } else {
+    openBtn = '<button type="button" onclick="switchMember(\'' + mem.id + '\')" class="text-[11px] text-primary-500 font-medium">Отвори</button>' +
+      '<button type="button" onclick="openEditMember(\'' + mem.id + '\')" class="text-[11px] text-slate-400 ml-2">✎</button>';
+  }
+  var toggles = '';
+  if (!isRemote) {
+    var on = !!mem.showOnMyCalendar;
+    toggles = '<div class="flex items-center gap-1 ml-auto">' + pinToggleHtml(mem.id, on, 'sm') + '</div>';
+  }
+  return '<div class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700/80">' +
+    '<span class="text-lg flex-shrink-0">' + (mem.avatar || '🐶') + '</span>' +
+    '<div class="min-w-0 flex-1"><p class="text-sm font-medium truncate">' + title + '</p>' +
+    '<p class="text-[10px] text-slate-400 truncate">' + sub + '</p></div>' +
+    openBtn + toggles + '</div>';
+}
+
+
 function createHousehold() {
   if (!firebaseReady || !currentUser) {
     alert('Влез с Firebase акаунт, за да създадеш домакинство.');
@@ -3566,6 +3718,7 @@ function createHousehold() {
     code: code,
     codeUpper: code.toUpperCase(),
     ownerUid: currentUser.uid,
+    name: '',
     memberUids: [currentUser.uid],
     members: {},
     createdAt: new Date().toISOString()
@@ -3729,6 +3882,8 @@ function subscribeHouseholdDoc(hid) {
     }
     var data = doc.data();
     householdCode = data.code || householdCode;
+    window._householdOwnerUid = data.ownerUid || null;
+    window._householdName = data.name || '';
     var memMap = data.members || {};
     householdPeers = [];
     householdSharedProfiles = [];
